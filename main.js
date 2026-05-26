@@ -547,17 +547,17 @@ var require_runtime = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/getId.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/getId.js
 var require_getId = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/getId.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/getId.js"(exports, module2) {
     "use strict";
     module2.exports = (prefix, cnt) => `${prefix}-${cnt}-${Math.random().toString(16).slice(3, 8)}`;
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createJob.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createJob.js
 var require_createJob = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createJob.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createJob.js"(exports, module2) {
     "use strict";
     var getId = require_getId();
     var jobCounter = 0;
@@ -580,9 +580,9 @@ var require_createJob = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/log.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/log.js
 var require_log = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/log.js"(exports) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/log.js"(exports) {
     "use strict";
     var logging = false;
     exports.logging = logging;
@@ -593,9 +593,9 @@ var require_log = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createScheduler.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createScheduler.js
 var require_createScheduler = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createScheduler.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createScheduler.js"(exports, module2) {
     "use strict";
     var createJob = require_createJob();
     var { log } = require_log();
@@ -668,9 +668,9 @@ var require_createScheduler = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/getEnvironment.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/getEnvironment.js
 var require_getEnvironment = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/getEnvironment.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/getEnvironment.js"(exports, module2) {
     "use strict";
     module2.exports = (key) => {
       const env = {};
@@ -689,9 +689,9 @@ var require_getEnvironment = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/resolvePaths.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/resolvePaths.js
 var require_resolvePaths = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/utils/resolvePaths.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/utils/resolvePaths.js"(exports, module2) {
     "use strict";
     var isBrowser = require_getEnvironment()("type") === "browser";
     var resolveURL = isBrowser ? (s) => new URL(s, window.location.href).href : (s) => s;
@@ -707,9 +707,9 @@ var require_resolvePaths = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/OEM.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/OEM.js
 var require_OEM = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/OEM.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/OEM.js"(exports, module2) {
     "use strict";
     module2.exports = {
       TESSERACT_ONLY: 0,
@@ -720,12 +720,12 @@ var require_OEM = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/package.json
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/package.json
 var require_package = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/package.json"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/package.json"(exports, module2) {
     module2.exports = {
       name: "tesseract.js",
-      version: "6.0.1",
+      version: "7.0.0",
       description: "Pure Javascript Multilingual OCR",
       main: "src/index.js",
       type: "commonjs",
@@ -794,8 +794,8 @@ var require_package = __commonJS({
         "node-fetch": "^2.6.9",
         "opencollective-postinstall": "^2.0.3",
         "regenerator-runtime": "^0.13.3",
-        "tesseract.js-core": "^6.0.0",
-        "wasm-feature-detect": "^1.2.11",
+        "tesseract.js-core": "^7.0.0",
+        "wasm-feature-detect": "^1.8.0",
         zlibjs: "^0.3.1"
       },
       overrides: {
@@ -817,9 +817,9 @@ var require_package = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/defaultOptions.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/defaultOptions.js
 var require_defaultOptions = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/defaultOptions.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/defaultOptions.js"(exports, module2) {
     "use strict";
     module2.exports = {
       /*
@@ -834,9 +834,9 @@ var require_defaultOptions = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/defaultOptions.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/defaultOptions.js
 var require_defaultOptions2 = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/defaultOptions.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/defaultOptions.js"(exports, module2) {
     "use strict";
     var version = require_package().version;
     var defaultOptions = require_defaultOptions();
@@ -847,9 +847,9 @@ var require_defaultOptions2 = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/spawnWorker.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/spawnWorker.js
 var require_spawnWorker = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/spawnWorker.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/spawnWorker.js"(exports, module2) {
     "use strict";
     module2.exports = ({ workerPath, workerBlobURL }) => {
       let worker;
@@ -866,9 +866,9 @@ var require_spawnWorker = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/terminateWorker.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/terminateWorker.js
 var require_terminateWorker = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/terminateWorker.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/terminateWorker.js"(exports, module2) {
     "use strict";
     module2.exports = (worker) => {
       worker.terminate();
@@ -876,9 +876,9 @@ var require_terminateWorker = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/onMessage.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/onMessage.js
 var require_onMessage = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/onMessage.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/onMessage.js"(exports, module2) {
     "use strict";
     module2.exports = (worker, handler) => {
       worker.onmessage = ({ data }) => {
@@ -888,9 +888,9 @@ var require_onMessage = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/send.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/send.js
 var require_send = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/send.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/send.js"(exports, module2) {
     "use strict";
     module2.exports = async (worker, packet) => {
       worker.postMessage(packet);
@@ -898,9 +898,9 @@ var require_send = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/loadImage.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/loadImage.js
 var require_loadImage = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/loadImage.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/loadImage.js"(exports, module2) {
     "use strict";
     var readFromBlobOrFile = (blob) => new Promise((resolve, reject) => {
       const fileReader = new FileReader();
@@ -951,9 +951,9 @@ var require_loadImage = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/index.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/index.js
 var require_browser = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/worker/browser/index.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/worker/browser/index.js"(exports, module2) {
     "use strict";
     var defaultOptions = require_defaultOptions2();
     var spawnWorker = require_spawnWorker();
@@ -972,9 +972,9 @@ var require_browser = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createWorker.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createWorker.js
 var require_createWorker = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/createWorker.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/createWorker.js"(exports, module2) {
     "use strict";
     var resolvePaths = require_resolvePaths();
     var createJob = require_createJob();
@@ -1161,9 +1161,9 @@ var require_createWorker = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/Tesseract.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/Tesseract.js
 var require_Tesseract = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/Tesseract.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/Tesseract.js"(exports, module2) {
     "use strict";
     var createWorker = require_createWorker();
     var recognize = async (image, langs, options) => {
@@ -1185,9 +1185,9 @@ var require_Tesseract = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/languages.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/languages.js
 var require_languages = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/languages.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/languages.js"(exports, module2) {
     "use strict";
     module2.exports = {
       AFR: "afr",
@@ -1296,9 +1296,9 @@ var require_languages = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/PSM.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/PSM.js
 var require_PSM = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/constants/PSM.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/constants/PSM.js"(exports, module2) {
     "use strict";
     module2.exports = {
       OSD_ONLY: "0",
@@ -1319,9 +1319,9 @@ var require_PSM = __commonJS({
   }
 });
 
-// node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/index.js
+// node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/index.js
 var require_src = __commonJS({
-  "node_modules/.pnpm/tesseract.js@6.0.1/node_modules/tesseract.js/src/index.js"(exports, module2) {
+  "node_modules/.pnpm/tesseract.js@7.0.0/node_modules/tesseract.js/src/index.js"(exports, module2) {
     "use strict";
     require_runtime();
     var createScheduler = require_createScheduler();
