@@ -1,0 +1,9 @@
+{
+  "id": "magic-tools",
+  "name": "Magic Tools",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "OCR tools and selection PDF export for Obsidian editor view.",
+  "author": "Silvio Ricagno",
+  "isDesktopOnly": false
+}

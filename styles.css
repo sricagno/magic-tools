@@ -1,0 +1,19 @@
+.magic-tools-ocr-textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+.magic-tools-button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.magic-tools-button-row button {
+  cursor: pointer;
+}

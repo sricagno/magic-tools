@@ -1,0 +1,6 @@
+minimumReleaseAge: 4320
+strictDepBuilds: true
+blockExoticSubdeps: true
+allowBuilds:
+  esbuild: true
+  tesseract.js: true
