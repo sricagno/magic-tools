@@ -42,45 +42,13 @@ Magic Tools adds two editor-view features to Obsidian:
    - disable Safe mode (if enabled)
    - enable **Magic Tools**
 
-#### Option B — Build locally
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-```
-
-Then copy generated files to `.obsidian/plugins/magic-tools/`:
-
-- `main.js`
-- `manifest.json`
-- `styles.css`
 
 ### Usage
 
 - Right-click an embedded image in editor view → **Extract text from image**.
 - Select text in editor view → **Export selection to PDF**.
 
-### Release workflow (maintainers)
-
-Version helpers keep `package.json` and `manifest.json` in sync:
-
-```bash
-pnpm version:patch
-# or
-pnpm version:minor
-# or
-pnpm version:major
-```
-
-Release by tag:
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-GitHub Actions builds and publishes release assets automatically.
+> Maintainer/developer setup and release flow are documented in `CONTRIBUTING.md`.
 
 ---
 
@@ -126,42 +94,10 @@ Magic Tools agrega dos funciones para la vista de edición de Obsidian:
    - desactivar Safe mode (si está activo)
    - habilitar **Magic Tools**
 
-#### Opción B — Build local
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-```
-
-Después copiar los archivos generados a `.obsidian/plugins/magic-tools/`:
-
-- `main.js`
-- `manifest.json`
-- `styles.css`
 
 ### Uso
 
 - Clic derecho sobre una imagen embebida en editor view → **Extract text from image**.
 - Seleccionar texto en editor view → **Export selection to PDF**.
 
-### Flujo de release (maintainers)
-
-Los helpers de versionado mantienen sincronizados `package.json` y `manifest.json`:
-
-```bash
-pnpm version:patch
-# o
-pnpm version:minor
-# o
-pnpm version:major
-```
-
-Release por tag:
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-GitHub Actions compila y publica los assets del release automáticamente.
+> La guía para maintainers/desarrolladores y el flujo de release están documentados en `CONTRIBUTING.md`.
