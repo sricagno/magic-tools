@@ -13,7 +13,7 @@
     "version:major": "pnpm version major --no-git-tag-version && pnpm version:sync"
   },
   "devDependencies": {
-    "@types/node": "^22.15.30",
+    "@types/node": "^25.9.1",
     "esbuild": "^0.28.0",
     "obsidian": "^1.8.10",
     "typescript": "^6.0.3",
