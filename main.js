@@ -1388,6 +1388,7 @@ function buildSelectionPdfOutputPath(notePath, noteBasename, exportFolder) {
 // main.ts
 var DEFAULT_SETTINGS = {
   googleApiKey: "",
+  openaiApiKey: "",
   defaultProvider: "local",
   insertAsCallout: false,
   geminiFastMode: false,
@@ -1403,7 +1404,10 @@ var I18N = {
     noImageDetected: "No se detect\xF3 una imagen embebida en la l\xEDnea o selecci\xF3n actual.",
     imageTooLarge: (sizeMb, maxMb) => `La imagen pesa ${sizeMb.toFixed(2)} MB y supera el m\xE1ximo configurado (${maxMb} MB).`,
     apiKeyMissing: "Falta la API key de Google AI Studio para usar Gemini OCR.",
+    openAiApiKeyMissing: "Falta la API key de OpenAI para usar OCR con OpenAI.",
     ocrFailed: "Fall\xF3 el OCR.",
+    serviceUnavailable: "El proveedor de OCR no est\xE1 disponible temporalmente (503). Prob\xE1 nuevamente en unos segundos.",
+    rateLimited: "Se alcanz\xF3 el l\xEDmite del proveedor OCR (429). Esper\xE1 un momento e intent\xE1 de nuevo.",
     timeoutError: "Se agot\xF3 el tiempo de OCR. Prob\xE1 aumentar el timeout (m\xE1x. 30s) o usar una imagen con menos texto/complejidad.",
     modalTitle: "Texto extra\xEDdo",
     copyText: "Copiar texto",
@@ -1420,8 +1424,10 @@ var I18N = {
     settingsTitle: "Magic Tools",
     settingApiKey: "Google AI Studio API key",
     settingApiKeyDesc: "Se usa cuando el proveedor OCR es Gemini.",
+    settingOpenAiApiKey: "OpenAI API key",
+    settingOpenAiApiKeyDesc: "Se usa cuando el proveedor OCR es OpenAI.",
     settingProvider: "Proveedor OCR por defecto",
-    settingProviderDesc: "Eleg\xED Gemini o OCR local.",
+    settingProviderDesc: "Eleg\xED Gemini, OpenAI o OCR local.",
     settingInsertAsCallout: "Insertar dentro de callout",
     settingInsertAsCalloutDesc: "Desactivado por defecto. Si se activa, usa bloque [!note] expandido.",
     settingGeminiFastMode: "Gemini Fast Mode (borra imagen)",
@@ -1445,6 +1451,7 @@ var I18N = {
     pdfWriteFailed: "No se pudo escribir el PDF. Revis\xE1 permisos/ruta de guardado.",
     selectionTooShort: (min) => `La selecci\xF3n es muy corta. Seleccion\xE1 al menos ${min} caracteres.`,
     providerGemini: "Gemini (Google AI Studio)",
+    providerOpenAI: "OpenAI",
     providerLocal: "OCR local",
     langAuto: "Autom\xE1tico",
     langEs: "Espa\xF1ol",
@@ -1456,7 +1463,10 @@ var I18N = {
     noImageDetected: "No embedded image was detected in the current line or selection.",
     imageTooLarge: (sizeMb, maxMb) => `Image is ${sizeMb.toFixed(2)} MB and exceeds configured max (${maxMb} MB).`,
     apiKeyMissing: "Google AI Studio API key is missing for Gemini OCR.",
+    openAiApiKeyMissing: "OpenAI API key is missing for OpenAI OCR.",
     ocrFailed: "OCR failed.",
+    serviceUnavailable: "OCR provider is temporarily unavailable (503). Please retry in a few seconds.",
+    rateLimited: "OCR provider rate limit reached (429). Please wait and retry.",
     timeoutError: "OCR timed out. Try increasing timeout (max 30s) or use an image with less text/complexity.",
     modalTitle: "Extracted text",
     copyText: "Copy text",
@@ -1473,8 +1483,10 @@ var I18N = {
     settingsTitle: "Magic Tools",
     settingApiKey: "Google AI Studio API key",
     settingApiKeyDesc: "Used when OCR provider is Gemini.",
+    settingOpenAiApiKey: "OpenAI API key",
+    settingOpenAiApiKeyDesc: "Used when OCR provider is OpenAI.",
     settingProvider: "Default OCR provider",
-    settingProviderDesc: "Choose Gemini or local OCR.",
+    settingProviderDesc: "Choose Gemini, OpenAI, or local OCR.",
     settingInsertAsCallout: "Insert inside callout",
     settingInsertAsCalloutDesc: "Off by default. If enabled, uses expanded [!note] block.",
     settingGeminiFastMode: "Gemini Fast Mode (deletes image)",
@@ -1498,6 +1510,7 @@ var I18N = {
     pdfWriteFailed: "Could not write PDF. Check path/permissions.",
     selectionTooShort: (min) => `Selection is too short. Please select at least ${min} characters.`,
     providerGemini: "Gemini (Google AI Studio)",
+    providerOpenAI: "OpenAI",
     providerLocal: "Local OCR",
     langAuto: "Auto",
     langEs: "Spanish",
@@ -1665,6 +1678,10 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
       console.error("[Magic Tools] OCR failed", error);
       if (error instanceof Error && error.message === "OCR_TIMEOUT") {
         new import_obsidian.Notice(this.i18n.timeoutError, 8e3);
+      } else if (error instanceof Error && error.message.includes("HTTP 503")) {
+        new import_obsidian.Notice(this.i18n.serviceUnavailable, 8e3);
+      } else if (error instanceof Error && error.message.includes("HTTP 429")) {
+        new import_obsidian.Notice(this.i18n.rateLimited, 8e3);
       } else {
         new import_obsidian.Notice(`${this.i18n.ocrFailed} ${error instanceof Error ? error.message : ""}`.trim());
       }
@@ -1684,6 +1701,9 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
   async runOcr(binary, extension) {
     if (this.settings.defaultProvider === "gemini") {
       return this.runGeminiOcr(binary, extension);
+    }
+    if (this.settings.defaultProvider === "openai") {
+      return this.runOpenAiOcr(binary, extension);
     }
     return this.runLocalOcr(binary);
   }
@@ -1719,11 +1739,64 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
       }
     );
     if (!response.ok) {
-      throw new Error(`Gemini HTTP ${response.status}`);
+      const details = await this.tryExtractProviderError(response);
+      throw new Error(`Gemini HTTP ${response.status}${details ? ` - ${details}` : ""}`);
     }
     const payload = await response.json();
     const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
     return text;
+  }
+  async runOpenAiOcr(binary, extension) {
+    if (!this.settings.openaiApiKey?.trim()) {
+      throw new Error(this.i18n.openAiApiKeyMissing);
+    }
+    const base64 = this.arrayBufferToBase64(binary);
+    const mimeType = this.getMimeType(extension);
+    const languageHint = this.settings.ocrLanguage === "auto" ? "auto" : this.settings.ocrLanguage;
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.settings.openaiApiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `Extract only readable text from this image. Do not add commentary. OCR language hint: ${languageHint}.`
+              },
+              {
+                type: "input_image",
+                image_url: `data:${mimeType};base64,${base64}`
+              }
+            ]
+          }
+        ]
+      })
+    });
+    if (!response.ok) {
+      const details = await this.tryExtractProviderError(response);
+      throw new Error(`OpenAI HTTP ${response.status}${details ? ` - ${details}` : ""}`);
+    }
+    const payload = await response.json();
+    if (payload.output_text?.trim()) {
+      return payload.output_text;
+    }
+    const contentText = payload.output?.flatMap((item) => item.content ?? []).map((part) => part.type === "output_text" || part.type === "text" ? part.text ?? "" : "").join("\n").trim() ?? "";
+    return contentText;
+  }
+  async tryExtractProviderError(response) {
+    try {
+      const clone = response.clone();
+      const body = await clone.json();
+      return body.error?.message?.trim() || body.message?.trim() || "";
+    } catch {
+      return "";
+    }
   }
   async runLocalOcr(binary) {
     const lang = this.settings.ocrLanguage === "es" ? "spa" : this.settings.ocrLanguage === "en" ? "eng" : "eng+spa";
@@ -2132,8 +2205,14 @@ var MagicToolsSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian.Setting(containerEl).setName(this.i18n.settingOpenAiApiKey).setDesc(this.i18n.settingOpenAiApiKeyDesc).addText(
+      (text) => text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
+        this.plugin.settings.openaiApiKey = value.trim();
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian.Setting(containerEl).setName(this.i18n.settingProvider).setDesc(this.i18n.settingProviderDesc).addDropdown((dropdown) => {
-      dropdown.addOption("local", this.i18n.providerLocal).addOption("gemini", this.i18n.providerGemini).setValue(this.plugin.settings.defaultProvider).onChange(async (value) => {
+      dropdown.addOption("local", this.i18n.providerLocal).addOption("gemini", this.i18n.providerGemini).addOption("openai", this.i18n.providerOpenAI).setValue(this.plugin.settings.defaultProvider).onChange(async (value) => {
         this.plugin.settings.defaultProvider = value;
         await this.plugin.saveSettings();
       });
