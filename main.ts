@@ -25,11 +25,12 @@ import {
   sanitizeOcrText,
 } from "./magic-tools-utils";
 
-type OcrProvider = "gemini" | "local";
+type OcrProvider = "gemini" | "openai" | "local";
 type OcrLanguage = "auto" | "es" | "en";
 
 interface MagicToolsSettings {
   googleApiKey: string;
+  openaiApiKey: string;
   defaultProvider: OcrProvider;
   insertAsCallout: boolean;
   geminiFastMode: boolean;
@@ -48,6 +49,7 @@ interface ImageContext {
 
 const DEFAULT_SETTINGS: MagicToolsSettings = {
   googleApiKey: "",
+  openaiApiKey: "",
   defaultProvider: "local",
   insertAsCallout: false,
   geminiFastMode: false,
@@ -65,7 +67,11 @@ const I18N = {
     imageTooLarge: (sizeMb: number, maxMb: number) =>
       `La imagen pesa ${sizeMb.toFixed(2)} MB y supera el máximo configurado (${maxMb} MB).`,
     apiKeyMissing: "Falta la API key de Google AI Studio para usar Gemini OCR.",
+    openAiApiKeyMissing: "Falta la API key de OpenAI para usar OCR con OpenAI.",
     ocrFailed: "Falló el OCR.",
+    serviceUnavailable:
+      "El proveedor de OCR no está disponible temporalmente (503). Probá nuevamente en unos segundos.",
+    rateLimited: "Se alcanzó el límite del proveedor OCR (429). Esperá un momento e intentá de nuevo.",
     timeoutError:
       "Se agotó el tiempo de OCR. Probá aumentar el timeout (máx. 30s) o usar una imagen con menos texto/complejidad.",
     modalTitle: "Texto extraído",
@@ -83,8 +89,10 @@ const I18N = {
     settingsTitle: "Magic Tools",
     settingApiKey: "Google AI Studio API key",
     settingApiKeyDesc: "Se usa cuando el proveedor OCR es Gemini.",
+    settingOpenAiApiKey: "OpenAI API key",
+    settingOpenAiApiKeyDesc: "Se usa cuando el proveedor OCR es OpenAI.",
     settingProvider: "Proveedor OCR por defecto",
-    settingProviderDesc: "Elegí Gemini o OCR local.",
+    settingProviderDesc: "Elegí Gemini, OpenAI o OCR local.",
     settingInsertAsCallout: "Insertar dentro de callout",
     settingInsertAsCalloutDesc: "Desactivado por defecto. Si se activa, usa bloque [!note] expandido.",
     settingGeminiFastMode: "Gemini Fast Mode (borra imagen)",
@@ -109,6 +117,7 @@ const I18N = {
     pdfWriteFailed: "No se pudo escribir el PDF. Revisá permisos/ruta de guardado.",
     selectionTooShort: (min: number) => `La selección es muy corta. Seleccioná al menos ${min} caracteres.`,
     providerGemini: "Gemini (Google AI Studio)",
+    providerOpenAI: "OpenAI",
     providerLocal: "OCR local",
     langAuto: "Automático",
     langEs: "Español",
@@ -122,7 +131,11 @@ const I18N = {
     imageTooLarge: (sizeMb: number, maxMb: number) =>
       `Image is ${sizeMb.toFixed(2)} MB and exceeds configured max (${maxMb} MB).`,
     apiKeyMissing: "Google AI Studio API key is missing for Gemini OCR.",
+    openAiApiKeyMissing: "OpenAI API key is missing for OpenAI OCR.",
     ocrFailed: "OCR failed.",
+    serviceUnavailable:
+      "OCR provider is temporarily unavailable (503). Please retry in a few seconds.",
+    rateLimited: "OCR provider rate limit reached (429). Please wait and retry.",
     timeoutError:
       "OCR timed out. Try increasing timeout (max 30s) or use an image with less text/complexity.",
     modalTitle: "Extracted text",
@@ -140,8 +153,10 @@ const I18N = {
     settingsTitle: "Magic Tools",
     settingApiKey: "Google AI Studio API key",
     settingApiKeyDesc: "Used when OCR provider is Gemini.",
+    settingOpenAiApiKey: "OpenAI API key",
+    settingOpenAiApiKeyDesc: "Used when OCR provider is OpenAI.",
     settingProvider: "Default OCR provider",
-    settingProviderDesc: "Choose Gemini or local OCR.",
+    settingProviderDesc: "Choose Gemini, OpenAI, or local OCR.",
     settingInsertAsCallout: "Insert inside callout",
     settingInsertAsCalloutDesc: "Off by default. If enabled, uses expanded [!note] block.",
     settingGeminiFastMode: "Gemini Fast Mode (deletes image)",
@@ -166,6 +181,7 @@ const I18N = {
     pdfWriteFailed: "Could not write PDF. Check path/permissions.",
     selectionTooShort: (min: number) => `Selection is too short. Please select at least ${min} characters.`,
     providerGemini: "Gemini (Google AI Studio)",
+    providerOpenAI: "OpenAI",
     providerLocal: "Local OCR",
     langAuto: "Auto",
     langEs: "Spanish",
@@ -371,6 +387,10 @@ export default class MagicToolsPlugin extends Plugin {
       console.error("[Magic Tools] OCR failed", error);
       if (error instanceof Error && error.message === "OCR_TIMEOUT") {
         new Notice(this.i18n.timeoutError, 8000);
+      } else if (error instanceof Error && error.message.includes("HTTP 503")) {
+        new Notice(this.i18n.serviceUnavailable, 8000);
+      } else if (error instanceof Error && error.message.includes("HTTP 429")) {
+        new Notice(this.i18n.rateLimited, 8000);
       } else {
         new Notice(`${this.i18n.ocrFailed} ${error instanceof Error ? error.message : ""}`.trim());
       }
@@ -392,6 +412,9 @@ export default class MagicToolsPlugin extends Plugin {
   private async runOcr(binary: ArrayBuffer, extension: string): Promise<string> {
     if (this.settings.defaultProvider === "gemini") {
       return this.runGeminiOcr(binary, extension);
+    }
+    if (this.settings.defaultProvider === "openai") {
+      return this.runOpenAiOcr(binary, extension);
     }
     return this.runLocalOcr(binary);
   }
@@ -431,7 +454,8 @@ export default class MagicToolsPlugin extends Plugin {
     );
 
     if (!response.ok) {
-      throw new Error(`Gemini HTTP ${response.status}`);
+      const details = await this.tryExtractProviderError(response);
+      throw new Error(`Gemini HTTP ${response.status}${details ? ` - ${details}` : ""}`);
     }
 
     const payload = (await response.json()) as {
@@ -440,6 +464,75 @@ export default class MagicToolsPlugin extends Plugin {
 
     const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
     return text;
+  }
+
+  private async runOpenAiOcr(binary: ArrayBuffer, extension: string): Promise<string> {
+    if (!this.settings.openaiApiKey?.trim()) {
+      throw new Error(this.i18n.openAiApiKeyMissing);
+    }
+
+    const base64 = this.arrayBufferToBase64(binary);
+    const mimeType = this.getMimeType(extension);
+    const languageHint = this.settings.ocrLanguage === "auto" ? "auto" : this.settings.ocrLanguage;
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.settings.openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `Extract only readable text from this image. Do not add commentary. OCR language hint: ${languageHint}.`,
+              },
+              {
+                type: "input_image",
+                image_url: `data:${mimeType};base64,${base64}`,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const details = await this.tryExtractProviderError(response);
+      throw new Error(`OpenAI HTTP ${response.status}${details ? ` - ${details}` : ""}`);
+    }
+
+    const payload = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{
+        content?: Array<{ type?: string; text?: string }>;
+      }>;
+    };
+
+    if (payload.output_text?.trim()) {
+      return payload.output_text;
+    }
+
+    const contentText =
+      payload.output
+        ?.flatMap((item) => item.content ?? [])
+        .map((part) => (part.type === "output_text" || part.type === "text" ? part.text ?? "" : ""))
+        .join("\n")
+        .trim() ?? "";
+    return contentText;
+  }
+
+  private async tryExtractProviderError(response: Response): Promise<string> {
+    try {
+      const clone = response.clone();
+      const body = (await clone.json()) as { error?: { message?: string }; message?: string };
+      return body.error?.message?.trim() || body.message?.trim() || "";
+    } catch {
+      return "";
+    }
   }
 
   private async runLocalOcr(binary: ArrayBuffer): Promise<string> {
@@ -939,12 +1032,26 @@ class MagicToolsSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(this.i18n.settingOpenAiApiKey)
+      .setDesc(this.i18n.settingOpenAiApiKeyDesc)
+      .addText((text) =>
+        text
+          .setPlaceholder("sk-...")
+          .setValue(this.plugin.settings.openaiApiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.openaiApiKey = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName(this.i18n.settingProvider)
       .setDesc(this.i18n.settingProviderDesc)
       .addDropdown((dropdown) => {
         dropdown
           .addOption("local", this.i18n.providerLocal)
           .addOption("gemini", this.i18n.providerGemini)
+          .addOption("openai", this.i18n.providerOpenAI)
           .setValue(this.plugin.settings.defaultProvider)
           .onChange(async (value: OcrProvider) => {
             this.plugin.settings.defaultProvider = value;
