@@ -19,8 +19,9 @@ import {
   MIN_TIMEOUT_SECONDS,
   buildSelectionPdfOutputPath,
   clampTimeoutSeconds,
+  getMarkdownImageMatches,
   getMarkdownImageMatch,
-  getParentPath,
+  resolveMarkdownImagePaths,
   removeWikiDecorators,
   sanitizeOcrText,
 } from "./magic-tools-utils";
@@ -39,6 +40,7 @@ interface MagicToolsSettings {
   ocrTimeoutSeconds: number;
   pdfExportFolder: string;
   minPdfSelectionChars: number;
+  enableCrop: boolean;
 }
 
 interface ImageContext {
@@ -58,6 +60,7 @@ const DEFAULT_SETTINGS: MagicToolsSettings = {
   ocrTimeoutSeconds: 5,
   pdfExportFolder: "",
   minPdfSelectionChars: 20,
+  enableCrop: false,
 };
 
 const I18N = {
@@ -109,7 +112,9 @@ const I18N = {
     settingMinPdfChars: "Mínimo de caracteres para exportar selección",
     settingMinPdfCharsDesc: "Evita exportaciones vacías o accidentales desde menú contextual.",
     sectionOcr: "OCR de imagen",
+    sectionCrop: "Recorte de imagen",
     sectionPdf: "Exportador PDF",
+    menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Exportar selección a PDF",
     invalidPdfExportFolder: "Ruta inválida. Debe ser una carpeta dentro del vault.",
     emptyRenderedPdfFallback: "No se pudo renderizar con estilo. Se exportó en modo texto simple.",
@@ -124,6 +129,13 @@ const I18N = {
     langEn: "Inglés",
     commandPdfUnavailable:
       "No se pudo acceder al motor de PDF de Electron. Probá actualizar Obsidian Desktop.",
+    cropModalTitle: "Recortar imagen",
+    cropExtract: "Recortar y guardar",
+    cropCancel: "Cancelar",
+    cropSaved: "Imagen recortada guardada. El original fue reemplazado (backup: .bkp).",
+    settingEnableCrop: "Habilitar recorte de imagen",
+    settingEnableCropDesc:
+      "⚠️ Al recortar, la imagen original es reemplazada por la versión recortada. Se crea un archivo .bkp como respaldo, pero no hay forma de deshacer automáticamente. Usalo bajo tu propio riesgo.",
   },
   en: {
     extractTextFromImage: "Extract text from image",
@@ -173,7 +185,9 @@ const I18N = {
     settingMinPdfChars: "Minimum chars for exporting selection",
     settingMinPdfCharsDesc: "Avoid empty or accidental exports from context menu.",
     sectionOcr: "Image OCR",
+    sectionCrop: "Image crop",
     sectionPdf: "PDF exporter",
+    menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Export selection to PDF",
     invalidPdfExportFolder: "Invalid path. It must be a folder inside the vault.",
     emptyRenderedPdfFallback: "Styled render failed. Exported using plain text fallback.",
@@ -188,6 +202,13 @@ const I18N = {
     langEn: "English",
     commandPdfUnavailable:
       "Could not access Electron PDF engine. Try updating Obsidian Desktop.",
+    cropModalTitle: "Crop image",
+    cropExtract: "Crop & Save",
+    cropCancel: "Cancel",
+    cropSaved: "Cropped image saved. Original replaced (backup: .bkp).",
+    settingEnableCrop: "Enable image crop",
+    settingEnableCropDesc:
+      "⚠️ Cropping replaces the original image with the cropped version. A .bkp backup is created, but there is no automatic undo. Use at your own risk.",
   },
 };
 
@@ -253,6 +274,249 @@ class OcrResultModal extends Modal {
   }
 }
 
+class CropModal extends Modal {
+  private readonly i18n = I18N[getLocale()];
+  private canvas!: HTMLCanvasElement;
+  private img!: HTMLImageElement;
+  private cropX = 0;
+  private cropY = 0;
+  private cropW = 0;
+  private cropH = 0;
+  private isDragging = false;
+  private isResizing = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private resizeHandle = "";
+  private readonly HANDLE_SIZE = 14;
+  private readonly HANDLE_HITBOX = 24;
+
+  constructor(
+    app: App,
+    private readonly imageDataUrl: string,
+    private readonly onCrop: (croppedDataUrl: string) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText(this.i18n.cropModalTitle);
+    this.modalEl.style.maxWidth = "90vw";
+    this.modalEl.style.width = "fit-content";
+
+    this.canvas = this.contentEl.createEl("canvas");
+    this.canvas.style.display = "block";
+    this.canvas.style.cursor = "crosshair";
+    this.canvas.style.maxWidth = "80vw";
+    this.canvas.style.maxHeight = "70vh";
+
+    this.img = new Image();
+    this.img.onload = () => this.initCanvas();
+    this.img.src = this.imageDataUrl;
+
+    const buttonRow = this.contentEl.createDiv({ cls: "magic-tools-button-row" });
+    buttonRow.style.cssText = "display:flex;gap:8px;margin-top:10px;";
+
+    const cropBtn = buttonRow.createEl("button", { text: this.i18n.cropExtract, cls: "mod-cta" });
+    cropBtn.addEventListener("click", () => this.performCrop());
+
+    const cancelBtn = buttonRow.createEl("button", { text: this.i18n.cropCancel });
+    cancelBtn.addEventListener("click", () => this.close());
+
+    this.canvas.addEventListener("mousedown", (e) => this.onMouseDown(e));
+    window.addEventListener("mousemove", this.onMouseMove);
+    window.addEventListener("mouseup", this.onMouseUp);
+  }
+
+  onClose(): void {
+    window.removeEventListener("mousemove", this.onMouseMove);
+    window.removeEventListener("mouseup", this.onMouseUp);
+  }
+
+  private initCanvas(): void {
+    const maxW = Math.min(window.innerWidth * 0.8, this.img.naturalWidth);
+    const maxH = Math.min(window.innerHeight * 0.7, this.img.naturalHeight);
+    const scale = Math.min(maxW / this.img.naturalWidth, maxH / this.img.naturalHeight, 1);
+    this.canvas.width = Math.round(this.img.naturalWidth * scale);
+    this.canvas.height = Math.round(this.img.naturalHeight * scale);
+    this.canvas.style.width = `${this.canvas.width}px`;
+    this.canvas.style.height = `${this.canvas.height}px`;
+
+    // Initial crop = full image
+    this.cropX = 0;
+    this.cropY = 0;
+    this.cropW = this.canvas.width;
+    this.cropH = this.canvas.height;
+
+    this.draw();
+  }
+
+  private draw(): void {
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+
+    // Dim outside crop region
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(0, 0, this.canvas.width, this.cropY);
+    ctx.fillRect(0, this.cropY + this.cropH, this.canvas.width, this.canvas.height - this.cropY - this.cropH);
+    ctx.fillRect(0, this.cropY, this.cropX, this.cropH);
+    ctx.fillRect(this.cropX + this.cropW, this.cropY, this.canvas.width - this.cropX - this.cropW, this.cropH);
+
+    // Crop rectangle border
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(this.cropX, this.cropY, this.cropW, this.cropH);
+
+    // Corner handles
+    ctx.fillStyle = "#00bcd4";
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 1;
+    const h = this.HANDLE_SIZE;
+    const corners = this.getHandleRects();
+    for (const rect of Object.values(corners)) {
+      ctx.fillRect(rect.x, rect.y, h, h);
+      ctx.strokeRect(rect.x, rect.y, h, h);
+    }
+  }
+
+  private getHandleRects(): Record<string, { x: number; y: number }> {
+    const h = this.HANDLE_SIZE;
+    const { cropX: x, cropY: y, cropW: w, cropH: hh } = this;
+    return {
+      nw: { x: x - h / 2, y: y - h / 2 },
+      ne: { x: x + w - h / 2, y: y - h / 2 },
+      sw: { x: x - h / 2, y: y + hh - h / 2 },
+      se: { x: x + w - h / 2, y: y + hh - h / 2 },
+    };
+  }
+
+  private hitTestHandle(mx: number, my: number): string {
+    const h = this.HANDLE_SIZE;
+    const hb = this.HANDLE_HITBOX;
+    for (const [name, rect] of Object.entries(this.getHandleRects())) {
+      const cx = rect.x + h / 2;
+      const cy = rect.y + h / 2;
+      if (mx >= cx - hb / 2 && mx <= cx + hb / 2 && my >= cy - hb / 2 && my <= cy + hb / 2) {
+        return name;
+      }
+    }
+    return "";
+  }
+
+  private hitTestCrop(mx: number, my: number): boolean {
+    return (
+      mx >= this.cropX && mx <= this.cropX + this.cropW &&
+      my >= this.cropY && my <= this.cropY + this.cropH
+    );
+  }
+
+  private canvasCoords(e: MouseEvent): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? this.canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? this.canvas.height / rect.height : 1;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    return {
+      x: Math.max(0, Math.min(this.canvas.width, x)),
+      y: Math.max(0, Math.min(this.canvas.height, y)),
+    };
+  }
+
+  private onMouseDown(e: MouseEvent): void {
+    const { x, y } = this.canvasCoords(e);
+    const handle = this.hitTestHandle(x, y);
+    if (handle) {
+      this.isResizing = true;
+      this.resizeHandle = handle;
+      this.dragStartX = x;
+      this.dragStartY = y;
+      return;
+    }
+    if (this.hitTestCrop(x, y)) {
+      this.isDragging = true;
+      this.dragStartX = x - this.cropX;
+      this.dragStartY = y - this.cropY;
+      return;
+    }
+    // Start new crop region
+    this.isDragging = false;
+    this.isResizing = false;
+    this.cropX = x;
+    this.cropY = y;
+    this.cropW = 1;
+    this.cropH = 1;
+    this.isResizing = true;
+    this.resizeHandle = "se";
+    this.dragStartX = x;
+    this.dragStartY = y;
+  }
+
+  private readonly onMouseMove = (e: MouseEvent): void => {
+    if (!this.isDragging && !this.isResizing) return;
+    const { x, y } = this.canvasCoords(e);
+
+    if (this.isDragging) {
+      this.cropX = Math.max(0, Math.min(this.canvas.width - this.cropW, x - this.dragStartX));
+      this.cropY = Math.max(0, Math.min(this.canvas.height - this.cropH, y - this.dragStartY));
+    } else {
+      const dx = x - this.dragStartX;
+      const dy = y - this.dragStartY;
+      this.dragStartX = x;
+      this.dragStartY = y;
+
+      const h = this.resizeHandle;
+      if (h.includes("e")) this.cropW = Math.max(10, this.cropW + dx);
+      if (h.includes("s")) this.cropH = Math.max(10, this.cropH + dy);
+      if (h.includes("w")) {
+        const newW = Math.max(10, this.cropW - dx);
+        this.cropX += this.cropW - newW;
+        this.cropW = newW;
+      }
+      if (h.includes("n")) {
+        const newH = Math.max(10, this.cropH - dy);
+        this.cropY += this.cropH - newH;
+        this.cropH = newH;
+      }
+
+      // Clamp to canvas bounds
+      this.cropX = Math.max(0, this.cropX);
+      this.cropY = Math.max(0, this.cropY);
+      if (this.cropX + this.cropW > this.canvas.width) this.cropW = this.canvas.width - this.cropX;
+      if (this.cropY + this.cropH > this.canvas.height) this.cropH = this.canvas.height - this.cropY;
+    }
+
+    this.draw();
+  };
+
+  private readonly onMouseUp = (): void => {
+    this.isDragging = false;
+    this.isResizing = false;
+  };
+
+  private performCrop(): void {
+    const scaleX = this.img.naturalWidth / this.canvas.width;
+    const scaleY = this.img.naturalHeight / this.canvas.height;
+
+    const srcX = Math.round(this.cropX * scaleX);
+    const srcY = Math.round(this.cropY * scaleY);
+    const srcW = Math.round(this.cropW * scaleX);
+    const srcH = Math.round(this.cropH * scaleY);
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = srcW;
+    offscreen.height = srcH;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(this.img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+    const dataUrl = offscreen.toDataURL("image/png");
+    this.close();
+    this.onCrop(dataUrl);
+  }
+}
+
 export default class MagicToolsPlugin extends Plugin {
   settings: MagicToolsSettings = DEFAULT_SETTINGS;
   private readonly i18n = I18N[getLocale()];
@@ -264,15 +528,31 @@ export default class MagicToolsPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor, view) => {
+        if (this.findImageContextNearPointer(editor, window.event as PointerEvent | undefined)) {
+          return;
+        }
         const pointerEvent = window.event as PointerEvent | undefined;
         const imageContext =
           this.findImageContextNearPointer(editor, pointerEvent) ?? this.getCurrentImageContext(editor, view);
 
         const selectedText = editor.getSelection().trim();
         const hasSelection = selectedText.length >= this.settings.minPdfSelectionChars;
-        if (hasSelection && view.file) {
+        const canExportSelection = hasSelection && !!view.file;
+        const canExtractImage = !!imageContext;
+        const canCropImage = canExtractImage && this.settings.enableCrop;
+
+        if (!canExportSelection && !canExtractImage && !canCropImage) {
+          return;
+        }
+
+        menu.addItem((item) => {
+          item.setTitle(this.i18n.menuGroupTitle).setIsLabel(true).setSection("magic-tools");
+        });
+
+        if (canExportSelection && view.file) {
           menu.addItem((item) => {
             item.setTitle(this.i18n.contextExportSelectionToPdf);
+            item.setSection("magic-tools");
             item.onClick(async () => {
               try {
                 await this.exportSelectionToPdf(editor, view.file as TFile);
@@ -284,16 +564,21 @@ export default class MagicToolsPlugin extends Plugin {
           });
         }
 
-        if (!imageContext) return;
-
-        if (selectedText.length > 0 && !this.isSelectionSingleImage(selectedText)) {
-          return;
+        if (canExtractImage && imageContext) {
+          menu.addItem((item) => {
+            item.setTitle(this.i18n.extractTextFromImage);
+            item.setSection("magic-tools");
+            item.onClick(async () => this.handleImageOcr(editor, view, imageContext));
+          });
         }
 
-        menu.addItem((item) => {
-          item.setTitle(this.i18n.extractTextFromImage);
-          item.onClick(async () => this.handleImageOcr(editor, view, imageContext));
-        });
+        if (canCropImage && imageContext) {
+          menu.addItem((item) => {
+            item.setTitle(this.i18n.cropModalTitle);
+            item.setSection("magic-tools");
+            item.onClick(async () => this.handleCrop(imageContext));
+          });
+        }
       }),
     );
 
@@ -303,7 +588,12 @@ export default class MagicToolsPlugin extends Plugin {
         if (!this.isImageFile(file)) return;
 
         menu.addItem((item) => {
+          item.setTitle(this.i18n.menuGroupTitle).setIsLabel(true).setSection("magic-tools");
+        });
+
+        menu.addItem((item) => {
           item.setTitle(this.i18n.extractTextFromImage);
+          item.setSection("magic-tools");
           item.onClick(async () => {
             const view = this.app.workspace.getActiveViewOfType(MarkdownView);
             const editor = view?.editor;
@@ -328,6 +618,36 @@ export default class MagicToolsPlugin extends Plugin {
             await this.handleImageOcr(editor, view, imageContext);
           });
         });
+
+        if (this.settings.enableCrop) {
+          menu.addItem((item) => {
+            item.setTitle(this.i18n.cropModalTitle);
+            item.setSection("magic-tools");
+            item.onClick(async () => {
+              const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+              const editor = view?.editor;
+              const activeFile = view?.file;
+              if (!editor || !activeFile) {
+                new Notice(this.i18n.noImageDetected);
+                return;
+              }
+
+              const line = this.findImageLineForFile(editor, file, activeFile.path);
+              if (line === -1) {
+                new Notice(this.i18n.noImageDetected);
+                return;
+              }
+
+              const imageContext: ImageContext = {
+                file,
+                line,
+                syntax: this.extractImageSyntaxAtLine(editor, line) ?? `![[${file.path}]]`,
+              };
+
+              await this.handleCrop(imageContext);
+            });
+          });
+        }
       }),
     );
 
@@ -395,6 +715,38 @@ export default class MagicToolsPlugin extends Plugin {
         new Notice(`${this.i18n.ocrFailed} ${error instanceof Error ? error.message : ""}`.trim());
       }
     }
+  }
+
+  private async handleCrop(imageContext: ImageContext): Promise<void> {
+    const binary = await this.app.vault.readBinary(imageContext.file);
+    const mimeType = this.getMimeType(imageContext.file.extension);
+    const base64 = this.arrayBufferToBase64(binary);
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    new CropModal(this.app, dataUrl, async (croppedDataUrl: string) => {
+      try {
+        const commaIdx = croppedDataUrl.indexOf(",");
+        const b64 = commaIdx !== -1 ? croppedDataUrl.substring(commaIdx + 1) : croppedDataUrl;
+        const binaryStr = atob(b64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        const croppedBinary = bytes.buffer;
+
+        // Write backup first
+        const bkpPath = imageContext.file.path + ".bkp";
+        await this.app.vault.adapter.writeBinary(bkpPath, binary);
+
+        // Replace original
+        await this.app.vault.modifyBinary(imageContext.file, croppedBinary);
+
+        // Auto-refresh temporarily disabled (kept in backlog)
+
+        new Notice(this.i18n.cropSaved);
+      } catch (error) {
+        console.error("[Magic Tools] Crop save failed", error);
+        new Notice("No se pudo guardar la imagen recortada.");
+      }
+    }).open();
   }
 
   private pickImageContextFromSelection(editor: Editor, view: MarkdownFileInfo): ImageContext | null {
@@ -816,17 +1168,19 @@ export default class MagicToolsPlugin extends Plugin {
     const line = editor.getCursor().line;
     const lineText = editor.getLine(line);
 
-    const syntax = getMarkdownImageMatch(lineText);
-    if (!syntax || !view.file) return null;
-
-    const file = this.resolveImageFile(syntax, view.file.path);
-    if (!file) return null;
-
-    return {
-      file,
-      line,
-      syntax,
-    };
+    if (!view.file) return null;
+    const matches = getMarkdownImageMatches(lineText);
+    for (const syntax of matches) {
+      const file = this.resolveImageFile(syntax, view.file.path);
+      if (file) {
+        return {
+          file,
+          line,
+          syntax,
+        };
+      }
+    }
+    return null;
   }
 
   private resolveImageFile(imageSyntax: string, sourcePath: string): TFile | null {
@@ -840,11 +1194,12 @@ export default class MagicToolsPlugin extends Plugin {
     const mdMatch = imageSyntax.match(/!\[[^\]]*\]\(([^)]+)\)/);
     if (!mdMatch?.[1]) return null;
 
-    const rawPath = decodeURIComponent(mdMatch[1]);
-    const parent = getParentPath(sourcePath);
-    const resolved = normalizePath(rawPath.startsWith("/") ? rawPath.substring(1) : `${parent}/${rawPath}`);
-    const af = this.app.vault.getAbstractFileByPath(resolved);
-    return af instanceof TFile ? af : null;
+    const candidates = resolveMarkdownImagePaths(mdMatch[1], sourcePath);
+    for (const candidate of candidates) {
+      const af = this.app.vault.getAbstractFileByPath(candidate);
+      if (af instanceof TFile) return af;
+    }
+    return null;
   }
 
   private inlineImageEmbedsForSelection(selection: string, sourcePath: string): string {
@@ -863,12 +1218,14 @@ export default class MagicToolsPlugin extends Plugin {
         return `![${alt}](${rawPath})`;
       }
 
-      const decoded = decodeURIComponent(rawPath.trim());
-      const parent = getParentPath(sourcePath);
-      const resolved = normalizePath(decoded.startsWith("/") ? decoded.substring(1) : `${parent}/${decoded}`);
-      const file = this.app.vault.getAbstractFileByPath(resolved);
-      if (!(file instanceof TFile)) return `![${alt}](${rawPath})`;
-      return `![${alt}](${this.app.vault.getResourcePath(file)})`;
+      const candidates = resolveMarkdownImagePaths(rawPath, sourcePath);
+      for (const candidate of candidates) {
+        const file = this.app.vault.getAbstractFileByPath(candidate);
+        if (file instanceof TFile) {
+          return `![${alt}](${this.app.vault.getResourcePath(file)})`;
+        }
+      }
+      return `![${alt}](${rawPath})`;
     });
   }
 
@@ -892,16 +1249,19 @@ export default class MagicToolsPlugin extends Plugin {
     const line = Number.isFinite(lineNumber) ? lineNumber : editor.getCursor().line;
     const lineText = editor.getLine(line);
 
-    const syntax = getMarkdownImageMatch(tokenText || lineText);
-    if (!syntax) return null;
+    const matches = getMarkdownImageMatches(tokenText || lineText);
+    if (!matches.length) return null;
 
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) return null;
 
-    const file = this.resolveImageFile(syntax, activeFile.path);
-    if (!file) return null;
-
-    return { file, line, syntax };
+    for (const syntax of matches) {
+      const file = this.resolveImageFile(syntax, activeFile.path);
+      if (file) {
+        return { file, line, syntax };
+      }
+    }
+    return null;
   }
 
   private getMimeType(extension: string): string {
@@ -1120,6 +1480,18 @@ class MagicToolsSettingTab extends PluginSettingTab {
             );
             await this.plugin.saveSettings();
           }
+        }),
+      );
+
+    containerEl.createEl("h3", { text: this.i18n.sectionCrop });
+
+    new Setting(containerEl)
+      .setName(this.i18n.settingEnableCrop)
+      .setDesc(this.i18n.settingEnableCropDesc)
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.enableCrop).onChange(async (value) => {
+          this.plugin.settings.enableCrop = value;
+          await this.plugin.saveSettings();
         }),
       );
 
