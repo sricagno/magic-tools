@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  IMAGE_OPTIMIZATION_EXTENSIONS,
   MAX_OUTPUT_LENGTH,
   MAX_TIMEOUT_SECONDS,
   MIN_TIMEOUT_SECONDS,
+  buildOptimizedImagePath,
+  buildOptimizedImagePathWithExtension,
   buildSelectionPdfOutputPath,
   clampTimeoutSeconds,
   getMarkdownImageMatches,
   getMarkdownImageMatch,
+  isImageOptimizationSupported,
   removeWikiDecorators,
   resolveMarkdownImagePaths,
   sanitizeOcrText,
@@ -124,5 +128,48 @@ describe("resolveMarkdownImagePaths", () => {
     expect(candidates[0]).toBe("image.png");
     // No second candidate since parent is vault root (same path)
     expect(candidates.length).toBe(1);
+  });
+});
+
+describe("isImageOptimizationSupported", () => {
+  it("supports the required common formats", () => {
+    for (const ext of IMAGE_OPTIMIZATION_EXTENSIONS) {
+      expect(isImageOptimizationSupported(ext)).toBe(true);
+    }
+  });
+
+  it("is case-insensitive", () => {
+    expect(isImageOptimizationSupported("JPG")).toBe(true);
+    expect(isImageOptimizationSupported("WebP")).toBe(true);
+  });
+
+  it("rejects unsupported formats", () => {
+    expect(isImageOptimizationSupported("gif")).toBe(false);
+    expect(isImageOptimizationSupported("bmp")).toBe(false);
+    expect(isImageOptimizationSupported("svg")).toBe(false);
+  });
+});
+
+describe("buildOptimizedImagePath", () => {
+  it("adds -optimized before extension", () => {
+    expect(buildOptimizedImagePath("images/photo.png")).toBe("images/photo-optimized.png");
+  });
+
+  it("works for files at vault root", () => {
+    expect(buildOptimizedImagePath("photo.jpg")).toBe("photo-optimized.jpg");
+  });
+
+  it("handles names with multiple dots", () => {
+    expect(buildOptimizedImagePath("images/my.photo.backup.webp")).toBe("images/my.photo.backup-optimized.webp");
+  });
+
+  it("handles files without extension", () => {
+    expect(buildOptimizedImagePath("images/photo")).toBe("images/photo-optimized");
+  });
+});
+
+describe("buildOptimizedImagePathWithExtension", () => {
+  it("uses requested extension", () => {
+    expect(buildOptimizedImagePathWithExtension("images/photo.png", "jpg")).toBe("images/photo-optimized.jpg");
   });
 });

@@ -13,12 +13,12 @@
     "version:major": "pnpm version major --no-git-tag-version && pnpm version:sync"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "esbuild": "^0.28.0",
     "obsidian": "^1.13.0",
     "typescript": "^6.0.3",
     "vite": "^6.4.2",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "dependencies": {
     "tesseract.js": "^7.0.0"
