@@ -1,6 +1,7 @@
 export const MAX_OUTPUT_LENGTH = 20000;
 export const MAX_TIMEOUT_SECONDS = 30;
 export const MIN_TIMEOUT_SECONDS = 3;
+export const IMAGE_OPTIMIZATION_EXTENSIONS = ["png", "jpg", "jpeg", "webp"] as const;
 
 export function sanitizeOcrText(input: string): string {
   const withoutControl = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
@@ -106,4 +107,35 @@ export function buildSelectionPdfOutputPath(
   const parent = getParentPath(notePath);
   const raw = parent ? `${parent}/${noteBasename}-selection.pdf` : `${noteBasename}-selection.pdf`;
   return raw.replace(/\/{2,}/g, "/");
+}
+
+export function isImageOptimizationSupported(extension: string): boolean {
+  const ext = extension.toLowerCase();
+  return IMAGE_OPTIMIZATION_EXTENSIONS.includes(ext as (typeof IMAGE_OPTIMIZATION_EXTENSIONS)[number]);
+}
+
+export function buildOptimizedImagePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const slashIdx = normalized.lastIndexOf("/");
+  const folder = slashIdx === -1 ? "" : normalized.substring(0, slashIdx + 1);
+  const fileName = slashIdx === -1 ? normalized : normalized.substring(slashIdx + 1);
+  const dotIdx = fileName.lastIndexOf(".");
+
+  if (dotIdx === -1) {
+    return `${folder}${fileName}-optimized`;
+  }
+
+  const base = fileName.substring(0, dotIdx);
+  const ext = fileName.substring(dotIdx + 1);
+  return `${folder}${base}-optimized.${ext}`;
+}
+
+export function buildOptimizedImagePathWithExtension(filePath: string, extension: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const slashIdx = normalized.lastIndexOf("/");
+  const folder = slashIdx === -1 ? "" : normalized.substring(0, slashIdx + 1);
+  const fileName = slashIdx === -1 ? normalized : normalized.substring(slashIdx + 1);
+  const dotIdx = fileName.lastIndexOf(".");
+  const base = dotIdx === -1 ? fileName : fileName.substring(0, dotIdx);
+  return `${folder}${base}-optimized.${extension.replace(/^\./, "")}`;
 }
