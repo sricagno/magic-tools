@@ -15,12 +15,14 @@ import {
   Platform,
 } from "obsidian";
 import {
+  buildOptimizedImagePathWithExtension,
   MAX_TIMEOUT_SECONDS,
   MIN_TIMEOUT_SECONDS,
   buildSelectionPdfOutputPath,
   clampTimeoutSeconds,
   getMarkdownImageMatches,
   getMarkdownImageMatch,
+  isImageOptimizationSupported,
   resolveMarkdownImagePaths,
   removeWikiDecorators,
   sanitizeOcrText,
@@ -40,7 +42,9 @@ interface MagicToolsSettings {
   ocrTimeoutSeconds: number;
   pdfExportFolder: string;
   minPdfSelectionChars: number;
-  enableCrop: boolean;
+  enableImageOptimization: boolean;
+  replaceOriginalImage: boolean;
+  createBackupBeforeReplace: boolean;
 }
 
 interface ImageContext {
@@ -60,7 +64,9 @@ const DEFAULT_SETTINGS: MagicToolsSettings = {
   ocrTimeoutSeconds: 5,
   pdfExportFolder: "",
   minPdfSelectionChars: 20,
-  enableCrop: false,
+  enableImageOptimization: false,
+  replaceOriginalImage: true,
+  createBackupBeforeReplace: true,
 };
 
 const I18N = {
@@ -112,7 +118,7 @@ const I18N = {
     settingMinPdfChars: "Mínimo de caracteres para exportar selección",
     settingMinPdfCharsDesc: "Evita exportaciones vacías o accidentales desde menú contextual.",
     sectionOcr: "OCR de imagen",
-    sectionCrop: "Recorte de imagen",
+    sectionImages: "Imágenes",
     sectionPdf: "Exportador PDF",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Exportar selección a PDF",
@@ -129,13 +135,48 @@ const I18N = {
     langEn: "Inglés",
     commandPdfUnavailable:
       "No se pudo acceder al motor de PDF de Electron. Probá actualizar Obsidian Desktop.",
-    cropModalTitle: "Recortar imagen",
-    cropExtract: "Recortar y guardar",
+    optimizeModalTitle: "Recortar y redimensionar imagen",
+    optimizeAction: "Recortar y redimensionar imagen",
+    optimizeApply: "Aplicar optimización",
     cropCancel: "Cancelar",
-    cropSaved: "Imagen recortada guardada. El original fue reemplazado (backup: .bkp).",
-    settingEnableCrop: "Habilitar recorte de imagen",
-    settingEnableCropDesc:
-      "⚠️ Al recortar, la imagen original es reemplazada por la versión recortada. Se crea un archivo .bkp como respaldo, pero no hay forma de deshacer automáticamente. Usalo bajo tu propio riesgo.",
+    optimizeSavedReplaced: "Imagen optimizada guardada. Se reemplazó el original.",
+    optimizeSavedReplacedWithBackup: "Imagen optimizada guardada. Se reemplazó el original (backup: .bkp).",
+    optimizeSavedNewFile: (path: string) => `Imagen optimizada guardada como: ${path}`,
+    optimizeUnsupportedFormat: (ext: string) =>
+      `Formato de imagen no soportado para optimización: .${ext}. Soportados: png, jpg, jpeg, webp.`,
+    optimizeSaveFailed: "No se pudo guardar la imagen optimizada.",
+    optimizeWouldIncreaseSize:
+      "La optimización propuesta aumentaría el tamaño de la imagen. Bajá más la calidad o recortá más para continuar.",
+    optimizeCurrentResolution: "Resolución actual",
+    optimizeEstimatedCurrentSize: "Tamaño estimado actual",
+    optimizeQualityLabel: "Calidad",
+    optimizeQualityNotApplicable: "(no aplica para PNG)",
+    optimizePngConversionNotice:
+      "En PNG no se puede ajustar calidad perceptual. Para comprimir con calidad, convertí a JPG.",
+    optimizeConvertToJpg: "Convertir PNG a JPG",
+    optimizeConvertFormatDisclaimer:
+      "Si reemplazás el original, se mantiene la extensión del archivo, pero el contenido interno pasa a JPG.",
+    optimizeEstimatedOutputResolution: "Resolución estimada de salida",
+    optimizeEstimatedOutputSize: "Tamaño estimado de salida",
+    optimizeRiskLevel: "Riesgo de degradación",
+    optimizeRiskLow: "Bajo",
+    optimizeRiskMedium: "Medio",
+    optimizeRiskHigh: "Alto",
+    optimizeHighRiskTitle: "Optimización agresiva",
+    optimizeRiskDisclaimer:
+      "Esta optimización puede degradar notablemente la imagen (texto borroso, artefactos y pérdida de detalle). Usala solo si priorizás reducir tamaño.",
+    optimizeContinueAnyway: "Continuar de todos modos",
+    settingEnableImageOptimization: "Habilitar acción de optimización de imagen",
+    settingEnableImageOptimizationDesc:
+      "Muestra la acción contextual para recortar y redimensionar imágenes.",
+    settingReplaceOriginalImage: "Reemplazar imagen original",
+    settingReplaceOriginalImageDesc:
+      "Si está activo, sobrescribe el archivo original con la versión optimizada.",
+    settingCreateBackupBeforeReplace: "Crear backup antes de reemplazar",
+    settingCreateBackupBeforeReplaceDesc:
+      "Si está activo, crea un archivo .bkp antes de sobrescribir la imagen original.",
+    settingImageRiskDisclaimer:
+      "⚠️ Si reemplazás la imagen original sin backup, no hay forma automática de recuperarla.",
   },
   en: {
     extractTextFromImage: "Extract text from image",
@@ -185,7 +226,7 @@ const I18N = {
     settingMinPdfChars: "Minimum chars for exporting selection",
     settingMinPdfCharsDesc: "Avoid empty or accidental exports from context menu.",
     sectionOcr: "Image OCR",
-    sectionCrop: "Image crop",
+    sectionImages: "Images",
     sectionPdf: "PDF exporter",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Export selection to PDF",
@@ -202,13 +243,48 @@ const I18N = {
     langEn: "English",
     commandPdfUnavailable:
       "Could not access Electron PDF engine. Try updating Obsidian Desktop.",
-    cropModalTitle: "Crop image",
-    cropExtract: "Crop & Save",
+    optimizeModalTitle: "Crop and resize image",
+    optimizeAction: "Crop and resize image",
+    optimizeApply: "Apply optimization",
     cropCancel: "Cancel",
-    cropSaved: "Cropped image saved. Original replaced (backup: .bkp).",
-    settingEnableCrop: "Enable image crop",
-    settingEnableCropDesc:
-      "⚠️ Cropping replaces the original image with the cropped version. A .bkp backup is created, but there is no automatic undo. Use at your own risk.",
+    optimizeSavedReplaced: "Optimized image saved. Original replaced.",
+    optimizeSavedReplacedWithBackup: "Optimized image saved. Original replaced (backup: .bkp).",
+    optimizeSavedNewFile: (path: string) => `Optimized image saved as: ${path}`,
+    optimizeUnsupportedFormat: (ext: string) =>
+      `Unsupported image format for optimization: .${ext}. Supported: png, jpg, jpeg, webp.`,
+    optimizeSaveFailed: "Could not save optimized image.",
+    optimizeWouldIncreaseSize:
+      "The proposed optimization would increase image size. Lower quality or crop more to continue.",
+    optimizeCurrentResolution: "Current resolution",
+    optimizeEstimatedCurrentSize: "Current estimated size",
+    optimizeQualityLabel: "Quality",
+    optimizeQualityNotApplicable: "(not applicable for PNG)",
+    optimizePngConversionNotice:
+      "PNG does not support perceptual quality adjustment. Convert to JPG to use quality compression.",
+    optimizeConvertToJpg: "Convert PNG to JPG",
+    optimizeConvertFormatDisclaimer:
+      "If you replace the original, the file extension is preserved but internal content is converted to JPG.",
+    optimizeEstimatedOutputResolution: "Estimated output resolution",
+    optimizeEstimatedOutputSize: "Estimated output size",
+    optimizeRiskLevel: "Degradation risk",
+    optimizeRiskLow: "Low",
+    optimizeRiskMedium: "Medium",
+    optimizeRiskHigh: "High",
+    optimizeHighRiskTitle: "Aggressive optimization",
+    optimizeRiskDisclaimer:
+      "This optimization may noticeably degrade image quality (blurry text, artifacts, detail loss). Use it only if file size reduction is the priority.",
+    optimizeContinueAnyway: "Continue anyway",
+    settingEnableImageOptimization: "Enable image optimization action",
+    settingEnableImageOptimizationDesc:
+      "Shows the contextual action to crop and resize images.",
+    settingReplaceOriginalImage: "Replace original image",
+    settingReplaceOriginalImageDesc:
+      "If enabled, overwrite the original file with the optimized version.",
+    settingCreateBackupBeforeReplace: "Create backup before replace",
+    settingCreateBackupBeforeReplaceDesc:
+      "If enabled, creates a .bkp file before overwriting the original image.",
+    settingImageRiskDisclaimer:
+      "⚠️ If you replace the original image without backup, it cannot be recovered automatically.",
   },
 };
 
@@ -274,14 +350,32 @@ class OcrResultModal extends Modal {
   }
 }
 
-class CropModal extends Modal {
+interface ImageOptimizationPayload {
+  blob: Blob;
+  width: number;
+  height: number;
+  quality: number;
+  outputMimeType: string;
+}
+
+class ImageOptimizationModal extends Modal {
   private readonly i18n = I18N[getLocale()];
   private canvas!: HTMLCanvasElement;
   private img!: HTMLImageElement;
+  private currentResolutionValueEl!: HTMLSpanElement;
+  private currentSizeValueEl!: HTMLSpanElement;
+  private outputResolutionValueEl!: HTMLSpanElement;
+  private outputSizeValueEl!: HTMLSpanElement;
+  private riskValueEl!: HTMLSpanElement;
+  private optimizeButton!: HTMLButtonElement;
   private cropX = 0;
   private cropY = 0;
   private cropW = 0;
   private cropH = 0;
+  private quality = 90;
+  private qualityEnabled = true;
+  private forceJpegConversion = false;
+  private estimateRequestId = 0;
   private isDragging = false;
   private isResizing = false;
   private dragStartX = 0;
@@ -289,25 +383,87 @@ class CropModal extends Modal {
   private resizeHandle = "";
   private readonly HANDLE_SIZE = 14;
   private readonly HANDLE_HITBOX = 24;
+  private readonly QUALITY_OPTIONS = [90, 75, 50, 25, 10] as const;
 
   constructor(
     app: App,
     private readonly imageDataUrl: string,
-    private readonly onCrop: (croppedDataUrl: string) => void,
+    private readonly outputMimeType: string,
+    private readonly currentSizeBytes: number,
+    private readonly onOptimize: (payload: ImageOptimizationPayload) => Promise<void>,
   ) {
     super(app);
   }
 
   onOpen(): void {
-    this.titleEl.setText(this.i18n.cropModalTitle);
+    this.titleEl.setText(this.i18n.optimizeModalTitle);
     this.modalEl.style.maxWidth = "90vw";
     this.modalEl.style.width = "fit-content";
+
+    const infoContainer = this.contentEl.createDiv({ cls: "magic-tools-optimize-info" });
+    infoContainer.style.cssText = "display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin-bottom:10px;";
+
+    this.currentResolutionValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeCurrentResolution);
+    this.currentSizeValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedCurrentSize);
+    this.outputResolutionValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedOutputResolution);
+    this.outputSizeValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedOutputSize);
+    this.riskValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeRiskLevel);
+
+    const qualityRow = this.contentEl.createDiv({ cls: "magic-tools-optimize-quality-row" });
+    qualityRow.style.cssText = "display:flex;align-items:center;gap:10px;margin-bottom:10px;";
+    const qualityLabelEl = qualityRow.createEl("label", { text: this.i18n.optimizeQualityLabel });
+    const qualitySelect = qualityRow.createEl("select");
+    for (const value of this.QUALITY_OPTIONS) {
+      const option = qualitySelect.createEl("option", { text: String(value) });
+      option.value = String(value);
+      if (value === this.quality) {
+        option.selected = true;
+      }
+    }
+    qualitySelect.addEventListener("change", () => {
+      this.quality = Number(qualitySelect.value) || 90;
+      void this.updateEstimatedOutputSize();
+    });
+
+    this.qualityEnabled = this.outputMimeType !== "image/png";
+    if (!this.qualityEnabled) {
+      qualitySelect.disabled = true;
+      qualityLabelEl.setText(`${this.i18n.optimizeQualityLabel} ${this.i18n.optimizeQualityNotApplicable}`);
+
+      const pngNotice = this.contentEl.createDiv({ text: this.i18n.optimizePngConversionNotice });
+      pngNotice.style.cssText = "margin-bottom:8px;color:var(--text-muted);font-size:12px;";
+
+      const convertRow = this.contentEl.createDiv({ cls: "magic-tools-optimize-convert-row" });
+      convertRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px;";
+      const convertToggle = convertRow.createEl("input");
+      convertToggle.type = "checkbox";
+      const convertLabel = convertRow.createEl("label", { text: this.i18n.optimizeConvertToJpg });
+      convertLabel.style.cursor = "pointer";
+      convertLabel.addEventListener("click", () => {
+        if (!convertToggle.checked) {
+          convertToggle.checked = true;
+          convertToggle.dispatchEvent(new Event("change"));
+        }
+      });
+
+      convertToggle.addEventListener("change", () => {
+        if (convertToggle.checked) {
+          this.forceJpegConversion = true;
+          convertToggle.disabled = true;
+          qualitySelect.disabled = false;
+          qualityLabelEl.setText(this.i18n.optimizeQualityLabel);
+          const convertDisclaimer = this.contentEl.createDiv({ text: this.i18n.optimizeConvertFormatDisclaimer });
+          convertDisclaimer.style.cssText = "margin-bottom:8px;color:var(--text-muted);font-size:12px;";
+          void this.updateEstimatedOutputSize();
+        }
+      });
+    }
 
     this.canvas = this.contentEl.createEl("canvas");
     this.canvas.style.display = "block";
     this.canvas.style.cursor = "crosshair";
     this.canvas.style.maxWidth = "80vw";
-    this.canvas.style.maxHeight = "70vh";
+    this.canvas.style.maxHeight = "50vh";
 
     this.img = new Image();
     this.img.onload = () => this.initCanvas();
@@ -316,8 +472,8 @@ class CropModal extends Modal {
     const buttonRow = this.contentEl.createDiv({ cls: "magic-tools-button-row" });
     buttonRow.style.cssText = "display:flex;gap:8px;margin-top:10px;";
 
-    const cropBtn = buttonRow.createEl("button", { text: this.i18n.cropExtract, cls: "mod-cta" });
-    cropBtn.addEventListener("click", () => this.performCrop());
+    this.optimizeButton = buttonRow.createEl("button", { text: this.i18n.optimizeApply, cls: "mod-cta" });
+    this.optimizeButton.addEventListener("click", () => void this.performOptimization(this.optimizeButton));
 
     const cancelBtn = buttonRow.createEl("button", { text: this.i18n.cropCancel });
     cancelBtn.addEventListener("click", () => this.close());
@@ -334,7 +490,7 @@ class CropModal extends Modal {
 
   private initCanvas(): void {
     const maxW = Math.min(window.innerWidth * 0.8, this.img.naturalWidth);
-    const maxH = Math.min(window.innerHeight * 0.7, this.img.naturalHeight);
+    const maxH = Math.min(window.innerHeight * 0.5, this.img.naturalHeight);
     const scale = Math.min(maxW / this.img.naturalWidth, maxH / this.img.naturalHeight, 1);
     this.canvas.width = Math.round(this.img.naturalWidth * scale);
     this.canvas.height = Math.round(this.img.naturalHeight * scale);
@@ -348,6 +504,15 @@ class CropModal extends Modal {
     this.cropH = this.canvas.height;
 
     this.draw();
+    this.currentResolutionValueEl.setText(`${this.img.naturalWidth} x ${this.img.naturalHeight}`);
+    this.currentSizeValueEl.setText(this.formatSize(this.currentSizeBytes));
+    this.updateEstimatedOutputResolution();
+    void this.updateEstimatedOutputSize();
+  }
+
+  private createInfoRow(container: HTMLElement, label: string): HTMLSpanElement {
+    container.createEl("span", { text: `${label}:` });
+    return container.createEl("span", { text: "-" });
   }
 
   private draw(): void {
@@ -488,6 +653,8 @@ class CropModal extends Modal {
     }
 
     this.draw();
+    this.updateEstimatedOutputResolution();
+    void this.updateEstimatedOutputSize();
   };
 
   private readonly onMouseUp = (): void => {
@@ -495,25 +662,185 @@ class CropModal extends Modal {
     this.isResizing = false;
   };
 
-  private performCrop(): void {
+  private async performOptimization(optimizeButton: HTMLButtonElement): Promise<void> {
+    optimizeButton.disabled = true;
+    try {
+      const payload = await this.renderOptimizedBlob();
+      if (payload.blob.size >= this.currentSizeBytes) {
+        new Notice(this.i18n.optimizeWouldIncreaseSize, 8000);
+        return;
+      }
+      const risk = this.evaluateRisk(payload);
+      if (risk.level === "high") {
+        const confirmed = await this.confirmHighRiskOptimization(risk.message);
+        if (!confirmed) return;
+      }
+      await this.onOptimize(payload);
+      this.close();
+    } catch (error) {
+      console.error("[Magic Tools] Optimize image failed", error);
+      new Notice(this.i18n.optimizeSaveFailed);
+    } finally {
+      optimizeButton.disabled = false;
+    }
+  }
+
+  private getSourceRect(): { x: number; y: number; width: number; height: number } {
     const scaleX = this.img.naturalWidth / this.canvas.width;
     const scaleY = this.img.naturalHeight / this.canvas.height;
 
     const srcX = Math.round(this.cropX * scaleX);
     const srcY = Math.round(this.cropY * scaleY);
-    const srcW = Math.round(this.cropW * scaleX);
-    const srcH = Math.round(this.cropH * scaleY);
+    const srcW = Math.max(1, Math.round(this.cropW * scaleX));
+    const srcH = Math.max(1, Math.round(this.cropH * scaleY));
 
-    const offscreen = document.createElement("canvas");
-    offscreen.width = srcW;
-    offscreen.height = srcH;
-    const ctx = offscreen.getContext("2d");
-    if (!ctx) return;
+    return { x: srcX, y: srcY, width: srcW, height: srcH };
+  }
 
-    ctx.drawImage(this.img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
-    const dataUrl = offscreen.toDataURL("image/png");
-    this.close();
-    this.onCrop(dataUrl);
+  private updateEstimatedOutputResolution(): void {
+    const rect = this.getSourceRect();
+    this.outputResolutionValueEl.setText(`${rect.width} x ${rect.height}`);
+  }
+
+  private async updateEstimatedOutputSize(): Promise<void> {
+    const requestId = ++this.estimateRequestId;
+    this.outputSizeValueEl.setText("...");
+    if (this.optimizeButton) this.optimizeButton.disabled = true;
+    try {
+      const payload = await this.renderOptimizedBlob();
+      if (requestId !== this.estimateRequestId) return;
+      this.outputResolutionValueEl.setText(`${payload.width} x ${payload.height}`);
+      const qualityInfo = payload.quality !== this.quality ? ` (${payload.quality})` : "";
+      const sizeText = `${this.formatSize(payload.blob.size)}${qualityInfo}`;
+      const risk = this.evaluateRisk(payload);
+      this.riskValueEl.setText(risk.label);
+      if (payload.blob.size >= this.currentSizeBytes) {
+        this.outputSizeValueEl.setText(`${sizeText} ⚠️`);
+        if (this.optimizeButton) this.optimizeButton.disabled = true;
+      } else {
+        this.outputSizeValueEl.setText(sizeText);
+        if (this.optimizeButton) this.optimizeButton.disabled = false;
+      }
+    } catch {
+      if (requestId !== this.estimateRequestId) return;
+      this.outputSizeValueEl.setText("-");
+      this.riskValueEl.setText("-");
+      if (this.optimizeButton) this.optimizeButton.disabled = true;
+    }
+  }
+
+  private evaluateRisk(payload: ImageOptimizationPayload): { level: "low" | "medium" | "high"; label: string; message: string } {
+    const ratio = payload.blob.size / Math.max(1, this.currentSizeBytes);
+    const pixels = Math.max(1, payload.width * payload.height);
+    const bpp = (payload.blob.size * 8) / pixels;
+    const lowQuality = this.qualityEnabled && payload.quality <= 30;
+    const aggressiveShrink = ratio < 0.25;
+    const veryLowBpp = bpp < 0.6;
+
+    if ((lowQuality && aggressiveShrink) || (lowQuality && veryLowBpp) || (aggressiveShrink && veryLowBpp)) {
+      return {
+        level: "high",
+        label: this.i18n.optimizeRiskHigh,
+        message: this.i18n.optimizeRiskDisclaimer,
+      };
+    }
+
+    if ((this.qualityEnabled && payload.quality <= 40) || ratio < 0.4 || bpp < 1.0) {
+      return {
+        level: "medium",
+        label: this.i18n.optimizeRiskMedium,
+        message: this.i18n.optimizeRiskDisclaimer,
+      };
+    }
+
+    return {
+      level: "low",
+      label: this.i18n.optimizeRiskLow,
+      message: this.i18n.optimizeRiskDisclaimer,
+    };
+  }
+
+  private confirmHighRiskOptimization(message: string): Promise<boolean> {
+    const prompt = `${this.i18n.optimizeHighRiskTitle}\n\n${message}\n\n${this.i18n.optimizeContinueAnyway}?`;
+    return Promise.resolve(window.confirm(prompt));
+  }
+
+  private async renderOptimizedBlob(): Promise<ImageOptimizationPayload> {
+    const src = this.getSourceRect();
+
+    const baseCanvas = document.createElement("canvas");
+    baseCanvas.width = src.width;
+    baseCanvas.height = src.height;
+    const baseCtx = baseCanvas.getContext("2d");
+    if (!baseCtx) throw new Error("Canvas context unavailable");
+    baseCtx.drawImage(this.img, src.x, src.y, src.width, src.height, 0, 0, src.width, src.height);
+
+    const qualityCandidates = this.getCandidateQualities();
+    const scaleCandidates = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25];
+    let bestPayload: ImageOptimizationPayload | null = null;
+
+    for (const scale of scaleCandidates) {
+      const targetW = Math.max(1, Math.round(src.width * scale));
+      const targetH = Math.max(1, Math.round(src.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(baseCanvas, 0, 0, src.width, src.height, 0, 0, targetW, targetH);
+
+      for (const q of qualityCandidates) {
+        const blob = await this.renderBlob(canvas, q);
+        if (!blob) continue;
+
+        const payload: ImageOptimizationPayload = {
+          blob,
+          width: targetW,
+          height: targetH,
+          quality: q,
+          outputMimeType: this.getEffectiveOutputMimeType(),
+        };
+
+        if (!bestPayload || payload.blob.size < bestPayload.blob.size) {
+          bestPayload = payload;
+        }
+
+        if (payload.blob.size < this.currentSizeBytes) {
+          return payload;
+        }
+      }
+    }
+
+    if (bestPayload) return bestPayload;
+
+    throw new Error("Blob conversion failed");
+  }
+
+  private getCandidateQualities(): number[] {
+    if (!this.qualityEnabled && !this.forceJpegConversion) {
+      return [this.quality];
+    }
+
+    const filtered = this.QUALITY_OPTIONS.filter((q) => q <= this.quality);
+    return filtered.length ? [...filtered] : [this.quality];
+  }
+
+  private renderBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
+    const mime = this.getEffectiveOutputMimeType();
+    return new Promise((resolve) => {
+      canvas.toBlob(resolve, mime, quality / 100);
+    });
+  }
+
+  private getEffectiveOutputMimeType(): string {
+    return this.forceJpegConversion ? "image/jpeg" : this.outputMimeType;
+  }
+
+  private formatSize(bytes: number): string {
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    return `${(bytes / 1024).toFixed(1)} KB`;
   }
 }
 
@@ -539,9 +866,9 @@ export default class MagicToolsPlugin extends Plugin {
         const hasSelection = selectedText.length >= this.settings.minPdfSelectionChars;
         const canExportSelection = hasSelection && !!view.file;
         const canExtractImage = !!imageContext;
-        const canCropImage = canExtractImage && this.settings.enableCrop;
+        const canOptimizeImage = canExtractImage && this.settings.enableImageOptimization;
 
-        if (!canExportSelection && !canExtractImage && !canCropImage) {
+        if (!canExportSelection && !canExtractImage && !canOptimizeImage) {
           return;
         }
 
@@ -572,11 +899,11 @@ export default class MagicToolsPlugin extends Plugin {
           });
         }
 
-        if (canCropImage && imageContext) {
+        if (canOptimizeImage && imageContext) {
           menu.addItem((item) => {
-            item.setTitle(this.i18n.cropModalTitle);
+            item.setTitle(this.i18n.optimizeAction);
             item.setSection("magic-tools");
-            item.onClick(async () => this.handleCrop(imageContext));
+            item.onClick(async () => this.handleImageOptimization(imageContext.file));
           });
         }
       }),
@@ -619,33 +946,11 @@ export default class MagicToolsPlugin extends Plugin {
           });
         });
 
-        if (this.settings.enableCrop) {
+        if (this.settings.enableImageOptimization) {
           menu.addItem((item) => {
-            item.setTitle(this.i18n.cropModalTitle);
+            item.setTitle(this.i18n.optimizeAction);
             item.setSection("magic-tools");
-            item.onClick(async () => {
-              const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-              const editor = view?.editor;
-              const activeFile = view?.file;
-              if (!editor || !activeFile) {
-                new Notice(this.i18n.noImageDetected);
-                return;
-              }
-
-              const line = this.findImageLineForFile(editor, file, activeFile.path);
-              if (line === -1) {
-                new Notice(this.i18n.noImageDetected);
-                return;
-              }
-
-              const imageContext: ImageContext = {
-                file,
-                line,
-                syntax: this.extractImageSyntaxAtLine(editor, line) ?? `![[${file.path}]]`,
-              };
-
-              await this.handleCrop(imageContext);
-            });
+            item.onClick(async () => this.handleImageOptimization(file));
           });
         }
       }),
@@ -717,34 +1022,48 @@ export default class MagicToolsPlugin extends Plugin {
     }
   }
 
-  private async handleCrop(imageContext: ImageContext): Promise<void> {
-    const binary = await this.app.vault.readBinary(imageContext.file);
-    const mimeType = this.getMimeType(imageContext.file.extension);
+  private async handleImageOptimization(imageFile: TFile): Promise<void> {
+    const extension = imageFile.extension.toLowerCase();
+    if (!isImageOptimizationSupported(extension)) {
+      new Notice(this.i18n.optimizeUnsupportedFormat(extension));
+      return;
+    }
+
+    const binary = await this.app.vault.readBinary(imageFile);
+    const mimeType = this.getMimeType(extension);
     const base64 = this.arrayBufferToBase64(binary);
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
-    new CropModal(this.app, dataUrl, async (croppedDataUrl: string) => {
+    new ImageOptimizationModal(this.app, dataUrl, mimeType, binary.byteLength, async (payload) => {
       try {
-        const commaIdx = croppedDataUrl.indexOf(",");
-        const b64 = commaIdx !== -1 ? croppedDataUrl.substring(commaIdx + 1) : croppedDataUrl;
-        const binaryStr = atob(b64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-        const croppedBinary = bytes.buffer;
+        const optimizedBinary = await payload.blob.arrayBuffer();
 
-        // Write backup first
-        const bkpPath = imageContext.file.path + ".bkp";
-        await this.app.vault.adapter.writeBinary(bkpPath, binary);
+        if (this.settings.replaceOriginalImage) {
+          if (this.settings.createBackupBeforeReplace) {
+            const bkpPath = imageFile.path + ".bkp";
+            await this.app.vault.adapter.writeBinary(bkpPath, binary);
+          }
 
-        // Replace original
-        await this.app.vault.modifyBinary(imageContext.file, croppedBinary);
+          await this.app.vault.modifyBinary(imageFile, optimizedBinary);
+          new Notice(
+            this.settings.createBackupBeforeReplace
+              ? this.i18n.optimizeSavedReplacedWithBackup
+              : this.i18n.optimizeSavedReplaced,
+          );
+          return;
+        }
 
-        // Auto-refresh temporarily disabled (kept in backlog)
-
-        new Notice(this.i18n.cropSaved);
+        const outputExt = payload.outputMimeType === "image/jpeg"
+          ? "jpg"
+          : payload.outputMimeType === "image/webp"
+            ? "webp"
+            : imageFile.extension;
+        const outputPath = buildOptimizedImagePathWithExtension(imageFile.path, outputExt);
+        await this.app.vault.adapter.writeBinary(outputPath, optimizedBinary);
+        new Notice(this.i18n.optimizeSavedNewFile(outputPath));
       } catch (error) {
-        console.error("[Magic Tools] Crop save failed", error);
-        new Notice("No se pudo guardar la imagen recortada.");
+        console.error("[Magic Tools] Image optimization save failed", error);
+        throw error;
       }
     }).open();
   }
@@ -1354,7 +1673,11 @@ export default class MagicToolsPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = (await this.loadData()) as Partial<MagicToolsSettings> & { enableCrop?: boolean };
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+    if (typeof loaded.enableImageOptimization !== "boolean" && typeof loaded.enableCrop === "boolean") {
+      this.settings.enableImageOptimization = loaded.enableCrop;
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -1483,17 +1806,45 @@ class MagicToolsSettingTab extends PluginSettingTab {
         }),
       );
 
-    containerEl.createEl("h3", { text: this.i18n.sectionCrop });
+    containerEl.createEl("h3", { text: this.i18n.sectionImages });
 
     new Setting(containerEl)
-      .setName(this.i18n.settingEnableCrop)
-      .setDesc(this.i18n.settingEnableCropDesc)
+      .setName(this.i18n.settingEnableImageOptimization)
+      .setDesc(this.i18n.settingEnableImageOptimizationDesc)
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.enableCrop).onChange(async (value) => {
-          this.plugin.settings.enableCrop = value;
+        toggle.setValue(this.plugin.settings.enableImageOptimization).onChange(async (value) => {
+          this.plugin.settings.enableImageOptimization = value;
           await this.plugin.saveSettings();
         }),
       );
+
+    new Setting(containerEl)
+      .setName(this.i18n.settingReplaceOriginalImage)
+      .setDesc(this.i18n.settingReplaceOriginalImageDesc)
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.replaceOriginalImage).onChange(async (value) => {
+          this.plugin.settings.replaceOriginalImage = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName(this.i18n.settingCreateBackupBeforeReplace)
+      .setDesc(this.i18n.settingCreateBackupBeforeReplaceDesc)
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.createBackupBeforeReplace).onChange(async (value) => {
+          this.plugin.settings.createBackupBeforeReplace = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    if (this.plugin.settings.replaceOriginalImage && !this.plugin.settings.createBackupBeforeReplace) {
+      const warning = containerEl.createEl("p", { text: this.i18n.settingImageRiskDisclaimer });
+      warning.style.margin = "6px 0 12px";
+      warning.style.color = "var(--text-warning, #c86d00)";
+    }
 
     containerEl.createEl("h3", { text: this.i18n.sectionPdf });
 

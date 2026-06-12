@@ -1355,6 +1355,7 @@ var import_obsidian = require("obsidian");
 var MAX_OUTPUT_LENGTH = 2e4;
 var MAX_TIMEOUT_SECONDS = 30;
 var MIN_TIMEOUT_SECONDS = 3;
+var IMAGE_OPTIMIZATION_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
 function sanitizeOcrText(input) {
   const withoutControl = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
   return withoutControl.slice(0, MAX_OUTPUT_LENGTH).trim();
@@ -1432,6 +1433,19 @@ function buildSelectionPdfOutputPath(notePath, noteBasename, exportFolder) {
   const raw = parent ? `${parent}/${noteBasename}-selection.pdf` : `${noteBasename}-selection.pdf`;
   return raw.replace(/\/{2,}/g, "/");
 }
+function isImageOptimizationSupported(extension) {
+  const ext = extension.toLowerCase();
+  return IMAGE_OPTIMIZATION_EXTENSIONS.includes(ext);
+}
+function buildOptimizedImagePathWithExtension(filePath, extension) {
+  const normalized = filePath.replace(/\\/g, "/");
+  const slashIdx = normalized.lastIndexOf("/");
+  const folder = slashIdx === -1 ? "" : normalized.substring(0, slashIdx + 1);
+  const fileName = slashIdx === -1 ? normalized : normalized.substring(slashIdx + 1);
+  const dotIdx = fileName.lastIndexOf(".");
+  const base = dotIdx === -1 ? fileName : fileName.substring(0, dotIdx);
+  return `${folder}${base}-optimized.${extension.replace(/^\./, "")}`;
+}
 
 // main.ts
 var DEFAULT_SETTINGS = {
@@ -1445,7 +1459,9 @@ var DEFAULT_SETTINGS = {
   ocrTimeoutSeconds: 5,
   pdfExportFolder: "",
   minPdfSelectionChars: 20,
-  enableCrop: false
+  enableImageOptimization: false,
+  replaceOriginalImage: true,
+  createBackupBeforeReplace: true
 };
 var I18N = {
   es: {
@@ -1492,7 +1508,7 @@ var I18N = {
     settingMinPdfChars: "M\xEDnimo de caracteres para exportar selecci\xF3n",
     settingMinPdfCharsDesc: "Evita exportaciones vac\xEDas o accidentales desde men\xFA contextual.",
     sectionOcr: "OCR de imagen",
-    sectionCrop: "Recorte de imagen",
+    sectionImages: "Im\xE1genes",
     sectionPdf: "Exportador PDF",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Exportar selecci\xF3n a PDF",
@@ -1508,12 +1524,39 @@ var I18N = {
     langEs: "Espa\xF1ol",
     langEn: "Ingl\xE9s",
     commandPdfUnavailable: "No se pudo acceder al motor de PDF de Electron. Prob\xE1 actualizar Obsidian Desktop.",
-    cropModalTitle: "Recortar imagen",
-    cropExtract: "Recortar y guardar",
+    optimizeModalTitle: "Recortar y redimensionar imagen",
+    optimizeAction: "Recortar y redimensionar imagen",
+    optimizeApply: "Aplicar optimizaci\xF3n",
     cropCancel: "Cancelar",
-    cropSaved: "Imagen recortada guardada. El original fue reemplazado (backup: .bkp).",
-    settingEnableCrop: "Habilitar recorte de imagen",
-    settingEnableCropDesc: "\u26A0\uFE0F Al recortar, la imagen original es reemplazada por la versi\xF3n recortada. Se crea un archivo .bkp como respaldo, pero no hay forma de deshacer autom\xE1ticamente. Usalo bajo tu propio riesgo."
+    optimizeSavedReplaced: "Imagen optimizada guardada. Se reemplaz\xF3 el original.",
+    optimizeSavedReplacedWithBackup: "Imagen optimizada guardada. Se reemplaz\xF3 el original (backup: .bkp).",
+    optimizeSavedNewFile: (path) => `Imagen optimizada guardada como: ${path}`,
+    optimizeUnsupportedFormat: (ext) => `Formato de imagen no soportado para optimizaci\xF3n: .${ext}. Soportados: png, jpg, jpeg, webp.`,
+    optimizeSaveFailed: "No se pudo guardar la imagen optimizada.",
+    optimizeWouldIncreaseSize: "La optimizaci\xF3n propuesta aumentar\xEDa el tama\xF1o de la imagen. Baj\xE1 m\xE1s la calidad o recort\xE1 m\xE1s para continuar.",
+    optimizeCurrentResolution: "Resoluci\xF3n actual",
+    optimizeEstimatedCurrentSize: "Tama\xF1o estimado actual",
+    optimizeQualityLabel: "Calidad",
+    optimizeQualityNotApplicable: "(no aplica para PNG)",
+    optimizePngConversionNotice: "En PNG no se puede ajustar calidad perceptual. Para comprimir con calidad, convert\xED a JPG.",
+    optimizeConvertToJpg: "Convertir PNG a JPG",
+    optimizeConvertFormatDisclaimer: "Si reemplaz\xE1s el original, se mantiene la extensi\xF3n del archivo, pero el contenido interno pasa a JPG.",
+    optimizeEstimatedOutputResolution: "Resoluci\xF3n estimada de salida",
+    optimizeEstimatedOutputSize: "Tama\xF1o estimado de salida",
+    optimizeRiskLevel: "Riesgo de degradaci\xF3n",
+    optimizeRiskLow: "Bajo",
+    optimizeRiskMedium: "Medio",
+    optimizeRiskHigh: "Alto",
+    optimizeHighRiskTitle: "Optimizaci\xF3n agresiva",
+    optimizeRiskDisclaimer: "Esta optimizaci\xF3n puede degradar notablemente la imagen (texto borroso, artefactos y p\xE9rdida de detalle). Usala solo si prioriz\xE1s reducir tama\xF1o.",
+    optimizeContinueAnyway: "Continuar de todos modos",
+    settingEnableImageOptimization: "Habilitar acci\xF3n de optimizaci\xF3n de imagen",
+    settingEnableImageOptimizationDesc: "Muestra la acci\xF3n contextual para recortar y redimensionar im\xE1genes.",
+    settingReplaceOriginalImage: "Reemplazar imagen original",
+    settingReplaceOriginalImageDesc: "Si est\xE1 activo, sobrescribe el archivo original con la versi\xF3n optimizada.",
+    settingCreateBackupBeforeReplace: "Crear backup antes de reemplazar",
+    settingCreateBackupBeforeReplaceDesc: "Si est\xE1 activo, crea un archivo .bkp antes de sobrescribir la imagen original.",
+    settingImageRiskDisclaimer: "\u26A0\uFE0F Si reemplaz\xE1s la imagen original sin backup, no hay forma autom\xE1tica de recuperarla."
   },
   en: {
     extractTextFromImage: "Extract text from image",
@@ -1559,7 +1602,7 @@ var I18N = {
     settingMinPdfChars: "Minimum chars for exporting selection",
     settingMinPdfCharsDesc: "Avoid empty or accidental exports from context menu.",
     sectionOcr: "Image OCR",
-    sectionCrop: "Image crop",
+    sectionImages: "Images",
     sectionPdf: "PDF exporter",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Export selection to PDF",
@@ -1575,12 +1618,39 @@ var I18N = {
     langEs: "Spanish",
     langEn: "English",
     commandPdfUnavailable: "Could not access Electron PDF engine. Try updating Obsidian Desktop.",
-    cropModalTitle: "Crop image",
-    cropExtract: "Crop & Save",
+    optimizeModalTitle: "Crop and resize image",
+    optimizeAction: "Crop and resize image",
+    optimizeApply: "Apply optimization",
     cropCancel: "Cancel",
-    cropSaved: "Cropped image saved. Original replaced (backup: .bkp).",
-    settingEnableCrop: "Enable image crop",
-    settingEnableCropDesc: "\u26A0\uFE0F Cropping replaces the original image with the cropped version. A .bkp backup is created, but there is no automatic undo. Use at your own risk."
+    optimizeSavedReplaced: "Optimized image saved. Original replaced.",
+    optimizeSavedReplacedWithBackup: "Optimized image saved. Original replaced (backup: .bkp).",
+    optimizeSavedNewFile: (path) => `Optimized image saved as: ${path}`,
+    optimizeUnsupportedFormat: (ext) => `Unsupported image format for optimization: .${ext}. Supported: png, jpg, jpeg, webp.`,
+    optimizeSaveFailed: "Could not save optimized image.",
+    optimizeWouldIncreaseSize: "The proposed optimization would increase image size. Lower quality or crop more to continue.",
+    optimizeCurrentResolution: "Current resolution",
+    optimizeEstimatedCurrentSize: "Current estimated size",
+    optimizeQualityLabel: "Quality",
+    optimizeQualityNotApplicable: "(not applicable for PNG)",
+    optimizePngConversionNotice: "PNG does not support perceptual quality adjustment. Convert to JPG to use quality compression.",
+    optimizeConvertToJpg: "Convert PNG to JPG",
+    optimizeConvertFormatDisclaimer: "If you replace the original, the file extension is preserved but internal content is converted to JPG.",
+    optimizeEstimatedOutputResolution: "Estimated output resolution",
+    optimizeEstimatedOutputSize: "Estimated output size",
+    optimizeRiskLevel: "Degradation risk",
+    optimizeRiskLow: "Low",
+    optimizeRiskMedium: "Medium",
+    optimizeRiskHigh: "High",
+    optimizeHighRiskTitle: "Aggressive optimization",
+    optimizeRiskDisclaimer: "This optimization may noticeably degrade image quality (blurry text, artifacts, detail loss). Use it only if file size reduction is the priority.",
+    optimizeContinueAnyway: "Continue anyway",
+    settingEnableImageOptimization: "Enable image optimization action",
+    settingEnableImageOptimizationDesc: "Shows the contextual action to crop and resize images.",
+    settingReplaceOriginalImage: "Replace original image",
+    settingReplaceOriginalImageDesc: "If enabled, overwrite the original file with the optimized version.",
+    settingCreateBackupBeforeReplace: "Create backup before replace",
+    settingCreateBackupBeforeReplaceDesc: "If enabled, creates a .bkp file before overwriting the original image.",
+    settingImageRiskDisclaimer: "\u26A0\uFE0F If you replace the original image without backup, it cannot be recovered automatically."
   }
 };
 function getLocale() {
@@ -1631,16 +1701,22 @@ var OcrResultModal = class extends import_obsidian.Modal {
     closeButton.addEventListener("click", () => this.close());
   }
 };
-var CropModal = class extends import_obsidian.Modal {
-  constructor(app, imageDataUrl, onCrop) {
+var ImageOptimizationModal = class extends import_obsidian.Modal {
+  constructor(app, imageDataUrl, outputMimeType, currentSizeBytes, onOptimize) {
     super(app);
     this.imageDataUrl = imageDataUrl;
-    this.onCrop = onCrop;
+    this.outputMimeType = outputMimeType;
+    this.currentSizeBytes = currentSizeBytes;
+    this.onOptimize = onOptimize;
     this.i18n = I18N[getLocale()];
     this.cropX = 0;
     this.cropY = 0;
     this.cropW = 0;
     this.cropH = 0;
+    this.quality = 90;
+    this.qualityEnabled = true;
+    this.forceJpegConversion = false;
+    this.estimateRequestId = 0;
     this.isDragging = false;
     this.isResizing = false;
     this.dragStartX = 0;
@@ -1648,6 +1724,7 @@ var CropModal = class extends import_obsidian.Modal {
     this.resizeHandle = "";
     this.HANDLE_SIZE = 14;
     this.HANDLE_HITBOX = 24;
+    this.QUALITY_OPTIONS = [90, 75, 50, 25, 10];
     this.onMouseMove = (e) => {
       if (!this.isDragging && !this.isResizing) return;
       const { x, y } = this.canvasCoords(e);
@@ -1678,6 +1755,8 @@ var CropModal = class extends import_obsidian.Modal {
         if (this.cropY + this.cropH > this.canvas.height) this.cropH = this.canvas.height - this.cropY;
       }
       this.draw();
+      this.updateEstimatedOutputResolution();
+      void this.updateEstimatedOutputSize();
     };
     this.onMouseUp = () => {
       this.isDragging = false;
@@ -1685,21 +1764,73 @@ var CropModal = class extends import_obsidian.Modal {
     };
   }
   onOpen() {
-    this.titleEl.setText(this.i18n.cropModalTitle);
+    this.titleEl.setText(this.i18n.optimizeModalTitle);
     this.modalEl.style.maxWidth = "90vw";
     this.modalEl.style.width = "fit-content";
+    const infoContainer = this.contentEl.createDiv({ cls: "magic-tools-optimize-info" });
+    infoContainer.style.cssText = "display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin-bottom:10px;";
+    this.currentResolutionValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeCurrentResolution);
+    this.currentSizeValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedCurrentSize);
+    this.outputResolutionValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedOutputResolution);
+    this.outputSizeValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeEstimatedOutputSize);
+    this.riskValueEl = this.createInfoRow(infoContainer, this.i18n.optimizeRiskLevel);
+    const qualityRow = this.contentEl.createDiv({ cls: "magic-tools-optimize-quality-row" });
+    qualityRow.style.cssText = "display:flex;align-items:center;gap:10px;margin-bottom:10px;";
+    const qualityLabelEl = qualityRow.createEl("label", { text: this.i18n.optimizeQualityLabel });
+    const qualitySelect = qualityRow.createEl("select");
+    for (const value of this.QUALITY_OPTIONS) {
+      const option = qualitySelect.createEl("option", { text: String(value) });
+      option.value = String(value);
+      if (value === this.quality) {
+        option.selected = true;
+      }
+    }
+    qualitySelect.addEventListener("change", () => {
+      this.quality = Number(qualitySelect.value) || 90;
+      void this.updateEstimatedOutputSize();
+    });
+    this.qualityEnabled = this.outputMimeType !== "image/png";
+    if (!this.qualityEnabled) {
+      qualitySelect.disabled = true;
+      qualityLabelEl.setText(`${this.i18n.optimizeQualityLabel} ${this.i18n.optimizeQualityNotApplicable}`);
+      const pngNotice = this.contentEl.createDiv({ text: this.i18n.optimizePngConversionNotice });
+      pngNotice.style.cssText = "margin-bottom:8px;color:var(--text-muted);font-size:12px;";
+      const convertRow = this.contentEl.createDiv({ cls: "magic-tools-optimize-convert-row" });
+      convertRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px;";
+      const convertToggle = convertRow.createEl("input");
+      convertToggle.type = "checkbox";
+      const convertLabel = convertRow.createEl("label", { text: this.i18n.optimizeConvertToJpg });
+      convertLabel.style.cursor = "pointer";
+      convertLabel.addEventListener("click", () => {
+        if (!convertToggle.checked) {
+          convertToggle.checked = true;
+          convertToggle.dispatchEvent(new Event("change"));
+        }
+      });
+      convertToggle.addEventListener("change", () => {
+        if (convertToggle.checked) {
+          this.forceJpegConversion = true;
+          convertToggle.disabled = true;
+          qualitySelect.disabled = false;
+          qualityLabelEl.setText(this.i18n.optimizeQualityLabel);
+          const convertDisclaimer = this.contentEl.createDiv({ text: this.i18n.optimizeConvertFormatDisclaimer });
+          convertDisclaimer.style.cssText = "margin-bottom:8px;color:var(--text-muted);font-size:12px;";
+          void this.updateEstimatedOutputSize();
+        }
+      });
+    }
     this.canvas = this.contentEl.createEl("canvas");
     this.canvas.style.display = "block";
     this.canvas.style.cursor = "crosshair";
     this.canvas.style.maxWidth = "80vw";
-    this.canvas.style.maxHeight = "70vh";
+    this.canvas.style.maxHeight = "50vh";
     this.img = new Image();
     this.img.onload = () => this.initCanvas();
     this.img.src = this.imageDataUrl;
     const buttonRow = this.contentEl.createDiv({ cls: "magic-tools-button-row" });
     buttonRow.style.cssText = "display:flex;gap:8px;margin-top:10px;";
-    const cropBtn = buttonRow.createEl("button", { text: this.i18n.cropExtract, cls: "mod-cta" });
-    cropBtn.addEventListener("click", () => this.performCrop());
+    this.optimizeButton = buttonRow.createEl("button", { text: this.i18n.optimizeApply, cls: "mod-cta" });
+    this.optimizeButton.addEventListener("click", () => void this.performOptimization(this.optimizeButton));
     const cancelBtn = buttonRow.createEl("button", { text: this.i18n.cropCancel });
     cancelBtn.addEventListener("click", () => this.close());
     this.canvas.addEventListener("mousedown", (e) => this.onMouseDown(e));
@@ -1712,7 +1843,7 @@ var CropModal = class extends import_obsidian.Modal {
   }
   initCanvas() {
     const maxW = Math.min(window.innerWidth * 0.8, this.img.naturalWidth);
-    const maxH = Math.min(window.innerHeight * 0.7, this.img.naturalHeight);
+    const maxH = Math.min(window.innerHeight * 0.5, this.img.naturalHeight);
     const scale = Math.min(maxW / this.img.naturalWidth, maxH / this.img.naturalHeight, 1);
     this.canvas.width = Math.round(this.img.naturalWidth * scale);
     this.canvas.height = Math.round(this.img.naturalHeight * scale);
@@ -1723,6 +1854,14 @@ var CropModal = class extends import_obsidian.Modal {
     this.cropW = this.canvas.width;
     this.cropH = this.canvas.height;
     this.draw();
+    this.currentResolutionValueEl.setText(`${this.img.naturalWidth} x ${this.img.naturalHeight}`);
+    this.currentSizeValueEl.setText(this.formatSize(this.currentSizeBytes));
+    this.updateEstimatedOutputResolution();
+    void this.updateEstimatedOutputSize();
+  }
+  createInfoRow(container, label) {
+    container.createEl("span", { text: `${label}:` });
+    return container.createEl("span", { text: "-" });
   }
   draw() {
     const ctx = this.canvas.getContext("2d");
@@ -1810,22 +1949,164 @@ var CropModal = class extends import_obsidian.Modal {
     this.dragStartX = x;
     this.dragStartY = y;
   }
-  performCrop() {
+  async performOptimization(optimizeButton) {
+    optimizeButton.disabled = true;
+    try {
+      const payload = await this.renderOptimizedBlob();
+      if (payload.blob.size >= this.currentSizeBytes) {
+        new import_obsidian.Notice(this.i18n.optimizeWouldIncreaseSize, 8e3);
+        return;
+      }
+      const risk = this.evaluateRisk(payload);
+      if (risk.level === "high") {
+        const confirmed = await this.confirmHighRiskOptimization(risk.message);
+        if (!confirmed) return;
+      }
+      await this.onOptimize(payload);
+      this.close();
+    } catch (error) {
+      console.error("[Magic Tools] Optimize image failed", error);
+      new import_obsidian.Notice(this.i18n.optimizeSaveFailed);
+    } finally {
+      optimizeButton.disabled = false;
+    }
+  }
+  getSourceRect() {
     const scaleX = this.img.naturalWidth / this.canvas.width;
     const scaleY = this.img.naturalHeight / this.canvas.height;
     const srcX = Math.round(this.cropX * scaleX);
     const srcY = Math.round(this.cropY * scaleY);
-    const srcW = Math.round(this.cropW * scaleX);
-    const srcH = Math.round(this.cropH * scaleY);
-    const offscreen = document.createElement("canvas");
-    offscreen.width = srcW;
-    offscreen.height = srcH;
-    const ctx = offscreen.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(this.img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
-    const dataUrl = offscreen.toDataURL("image/png");
-    this.close();
-    this.onCrop(dataUrl);
+    const srcW = Math.max(1, Math.round(this.cropW * scaleX));
+    const srcH = Math.max(1, Math.round(this.cropH * scaleY));
+    return { x: srcX, y: srcY, width: srcW, height: srcH };
+  }
+  updateEstimatedOutputResolution() {
+    const rect = this.getSourceRect();
+    this.outputResolutionValueEl.setText(`${rect.width} x ${rect.height}`);
+  }
+  async updateEstimatedOutputSize() {
+    const requestId = ++this.estimateRequestId;
+    this.outputSizeValueEl.setText("...");
+    if (this.optimizeButton) this.optimizeButton.disabled = true;
+    try {
+      const payload = await this.renderOptimizedBlob();
+      if (requestId !== this.estimateRequestId) return;
+      this.outputResolutionValueEl.setText(`${payload.width} x ${payload.height}`);
+      const qualityInfo = payload.quality !== this.quality ? ` (${payload.quality})` : "";
+      const sizeText = `${this.formatSize(payload.blob.size)}${qualityInfo}`;
+      const risk = this.evaluateRisk(payload);
+      this.riskValueEl.setText(risk.label);
+      if (payload.blob.size >= this.currentSizeBytes) {
+        this.outputSizeValueEl.setText(`${sizeText} \u26A0\uFE0F`);
+        if (this.optimizeButton) this.optimizeButton.disabled = true;
+      } else {
+        this.outputSizeValueEl.setText(sizeText);
+        if (this.optimizeButton) this.optimizeButton.disabled = false;
+      }
+    } catch {
+      if (requestId !== this.estimateRequestId) return;
+      this.outputSizeValueEl.setText("-");
+      this.riskValueEl.setText("-");
+      if (this.optimizeButton) this.optimizeButton.disabled = true;
+    }
+  }
+  evaluateRisk(payload) {
+    const ratio = payload.blob.size / Math.max(1, this.currentSizeBytes);
+    const pixels = Math.max(1, payload.width * payload.height);
+    const bpp = payload.blob.size * 8 / pixels;
+    const lowQuality = this.qualityEnabled && payload.quality <= 30;
+    const aggressiveShrink = ratio < 0.25;
+    const veryLowBpp = bpp < 0.6;
+    if (lowQuality && aggressiveShrink || lowQuality && veryLowBpp || aggressiveShrink && veryLowBpp) {
+      return {
+        level: "high",
+        label: this.i18n.optimizeRiskHigh,
+        message: this.i18n.optimizeRiskDisclaimer
+      };
+    }
+    if (this.qualityEnabled && payload.quality <= 40 || ratio < 0.4 || bpp < 1) {
+      return {
+        level: "medium",
+        label: this.i18n.optimizeRiskMedium,
+        message: this.i18n.optimizeRiskDisclaimer
+      };
+    }
+    return {
+      level: "low",
+      label: this.i18n.optimizeRiskLow,
+      message: this.i18n.optimizeRiskDisclaimer
+    };
+  }
+  confirmHighRiskOptimization(message) {
+    const prompt = `${this.i18n.optimizeHighRiskTitle}
+
+${message}
+
+${this.i18n.optimizeContinueAnyway}?`;
+    return Promise.resolve(window.confirm(prompt));
+  }
+  async renderOptimizedBlob() {
+    const src = this.getSourceRect();
+    const baseCanvas = document.createElement("canvas");
+    baseCanvas.width = src.width;
+    baseCanvas.height = src.height;
+    const baseCtx = baseCanvas.getContext("2d");
+    if (!baseCtx) throw new Error("Canvas context unavailable");
+    baseCtx.drawImage(this.img, src.x, src.y, src.width, src.height, 0, 0, src.width, src.height);
+    const qualityCandidates = this.getCandidateQualities();
+    const scaleCandidates = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25];
+    let bestPayload = null;
+    for (const scale of scaleCandidates) {
+      const targetW = Math.max(1, Math.round(src.width * scale));
+      const targetH = Math.max(1, Math.round(src.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(baseCanvas, 0, 0, src.width, src.height, 0, 0, targetW, targetH);
+      for (const q of qualityCandidates) {
+        const blob = await this.renderBlob(canvas, q);
+        if (!blob) continue;
+        const payload = {
+          blob,
+          width: targetW,
+          height: targetH,
+          quality: q,
+          outputMimeType: this.getEffectiveOutputMimeType()
+        };
+        if (!bestPayload || payload.blob.size < bestPayload.blob.size) {
+          bestPayload = payload;
+        }
+        if (payload.blob.size < this.currentSizeBytes) {
+          return payload;
+        }
+      }
+    }
+    if (bestPayload) return bestPayload;
+    throw new Error("Blob conversion failed");
+  }
+  getCandidateQualities() {
+    if (!this.qualityEnabled && !this.forceJpegConversion) {
+      return [this.quality];
+    }
+    const filtered = this.QUALITY_OPTIONS.filter((q) => q <= this.quality);
+    return filtered.length ? [...filtered] : [this.quality];
+  }
+  renderBlob(canvas, quality) {
+    const mime = this.getEffectiveOutputMimeType();
+    return new Promise((resolve) => {
+      canvas.toBlob(resolve, mime, quality / 100);
+    });
+  }
+  getEffectiveOutputMimeType() {
+    return this.forceJpegConversion ? "image/jpeg" : this.outputMimeType;
+  }
+  formatSize(bytes) {
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    return `${(bytes / 1024).toFixed(1)} KB`;
   }
 };
 var MagicToolsPlugin = class extends import_obsidian.Plugin {
@@ -1848,8 +2129,8 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
         const hasSelection = selectedText.length >= this.settings.minPdfSelectionChars;
         const canExportSelection = hasSelection && !!view.file;
         const canExtractImage = !!imageContext;
-        const canCropImage = canExtractImage && this.settings.enableCrop;
-        if (!canExportSelection && !canExtractImage && !canCropImage) {
+        const canOptimizeImage = canExtractImage && this.settings.enableImageOptimization;
+        if (!canExportSelection && !canExtractImage && !canOptimizeImage) {
           return;
         }
         menu.addItem((item) => {
@@ -1876,11 +2157,11 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
             item.onClick(async () => this.handleImageOcr(editor, view, imageContext));
           });
         }
-        if (canCropImage && imageContext) {
+        if (canOptimizeImage && imageContext) {
           menu.addItem((item) => {
-            item.setTitle(this.i18n.cropModalTitle);
+            item.setTitle(this.i18n.optimizeAction);
             item.setSection("magic-tools");
-            item.onClick(async () => this.handleCrop(imageContext));
+            item.onClick(async () => this.handleImageOptimization(imageContext.file));
           });
         }
       })
@@ -1916,30 +2197,11 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
             await this.handleImageOcr(editor, view, imageContext);
           });
         });
-        if (this.settings.enableCrop) {
+        if (this.settings.enableImageOptimization) {
           menu.addItem((item) => {
-            item.setTitle(this.i18n.cropModalTitle);
+            item.setTitle(this.i18n.optimizeAction);
             item.setSection("magic-tools");
-            item.onClick(async () => {
-              const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
-              const editor = view?.editor;
-              const activeFile = view?.file;
-              if (!editor || !activeFile) {
-                new import_obsidian.Notice(this.i18n.noImageDetected);
-                return;
-              }
-              const line = this.findImageLineForFile(editor, file, activeFile.path);
-              if (line === -1) {
-                new import_obsidian.Notice(this.i18n.noImageDetected);
-                return;
-              }
-              const imageContext = {
-                file,
-                line,
-                syntax: this.extractImageSyntaxAtLine(editor, line) ?? `![[${file.path}]]`
-              };
-              await this.handleCrop(imageContext);
-            });
+            item.onClick(async () => this.handleImageOptimization(file));
           });
         }
       })
@@ -1998,26 +2260,37 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
       }
     }
   }
-  async handleCrop(imageContext) {
-    const binary = await this.app.vault.readBinary(imageContext.file);
-    const mimeType = this.getMimeType(imageContext.file.extension);
+  async handleImageOptimization(imageFile) {
+    const extension = imageFile.extension.toLowerCase();
+    if (!isImageOptimizationSupported(extension)) {
+      new import_obsidian.Notice(this.i18n.optimizeUnsupportedFormat(extension));
+      return;
+    }
+    const binary = await this.app.vault.readBinary(imageFile);
+    const mimeType = this.getMimeType(extension);
     const base64 = this.arrayBufferToBase64(binary);
     const dataUrl = `data:${mimeType};base64,${base64}`;
-    new CropModal(this.app, dataUrl, async (croppedDataUrl) => {
+    new ImageOptimizationModal(this.app, dataUrl, mimeType, binary.byteLength, async (payload) => {
       try {
-        const commaIdx = croppedDataUrl.indexOf(",");
-        const b64 = commaIdx !== -1 ? croppedDataUrl.substring(commaIdx + 1) : croppedDataUrl;
-        const binaryStr = atob(b64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-        const croppedBinary = bytes.buffer;
-        const bkpPath = imageContext.file.path + ".bkp";
-        await this.app.vault.adapter.writeBinary(bkpPath, binary);
-        await this.app.vault.modifyBinary(imageContext.file, croppedBinary);
-        new import_obsidian.Notice(this.i18n.cropSaved);
+        const optimizedBinary = await payload.blob.arrayBuffer();
+        if (this.settings.replaceOriginalImage) {
+          if (this.settings.createBackupBeforeReplace) {
+            const bkpPath = imageFile.path + ".bkp";
+            await this.app.vault.adapter.writeBinary(bkpPath, binary);
+          }
+          await this.app.vault.modifyBinary(imageFile, optimizedBinary);
+          new import_obsidian.Notice(
+            this.settings.createBackupBeforeReplace ? this.i18n.optimizeSavedReplacedWithBackup : this.i18n.optimizeSavedReplaced
+          );
+          return;
+        }
+        const outputExt = payload.outputMimeType === "image/jpeg" ? "jpg" : payload.outputMimeType === "image/webp" ? "webp" : imageFile.extension;
+        const outputPath = buildOptimizedImagePathWithExtension(imageFile.path, outputExt);
+        await this.app.vault.adapter.writeBinary(outputPath, optimizedBinary);
+        new import_obsidian.Notice(this.i18n.optimizeSavedNewFile(outputPath));
       } catch (error) {
-        console.error("[Magic Tools] Crop save failed", error);
-        new import_obsidian.Notice("No se pudo guardar la imagen recortada.");
+        console.error("[Magic Tools] Image optimization save failed", error);
+        throw error;
       }
     }).open();
   }
@@ -2527,7 +2800,11 @@ ${safeText}
     return btoa(binary);
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+    if (typeof loaded.enableImageOptimization !== "boolean" && typeof loaded.enableCrop === "boolean") {
+      this.settings.enableImageOptimization = loaded.enableCrop;
+    }
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -2601,13 +2878,32 @@ var MagicToolsSettingTab = class extends import_obsidian.PluginSettingTab {
         }
       })
     );
-    containerEl.createEl("h3", { text: this.i18n.sectionCrop });
-    new import_obsidian.Setting(containerEl).setName(this.i18n.settingEnableCrop).setDesc(this.i18n.settingEnableCropDesc).addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.enableCrop).onChange(async (value) => {
-        this.plugin.settings.enableCrop = value;
+    containerEl.createEl("h3", { text: this.i18n.sectionImages });
+    new import_obsidian.Setting(containerEl).setName(this.i18n.settingEnableImageOptimization).setDesc(this.i18n.settingEnableImageOptimizationDesc).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.enableImageOptimization).onChange(async (value) => {
+        this.plugin.settings.enableImageOptimization = value;
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian.Setting(containerEl).setName(this.i18n.settingReplaceOriginalImage).setDesc(this.i18n.settingReplaceOriginalImageDesc).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.replaceOriginalImage).onChange(async (value) => {
+        this.plugin.settings.replaceOriginalImage = value;
+        await this.plugin.saveSettings();
+        this.display();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName(this.i18n.settingCreateBackupBeforeReplace).setDesc(this.i18n.settingCreateBackupBeforeReplaceDesc).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.createBackupBeforeReplace).onChange(async (value) => {
+        this.plugin.settings.createBackupBeforeReplace = value;
+        await this.plugin.saveSettings();
+        this.display();
+      })
+    );
+    if (this.plugin.settings.replaceOriginalImage && !this.plugin.settings.createBackupBeforeReplace) {
+      const warning = containerEl.createEl("p", { text: this.i18n.settingImageRiskDisclaimer });
+      warning.style.margin = "6px 0 12px";
+      warning.style.color = "var(--text-warning, #c86d00)";
+    }
     containerEl.createEl("h3", { text: this.i18n.sectionPdf });
     new import_obsidian.Setting(containerEl).setName(this.i18n.settingPdfExportFolder).setDesc(this.i18n.settingPdfExportFolderDesc).addText(
       (text) => text.setPlaceholder("Exports/PDF").setValue(this.plugin.settings.pdfExportFolder).onChange(async (value) => {
