@@ -2,11 +2,12 @@
 
 ## English
 
-Magic Tools adds three editor-view features to Obsidian:
+Magic Tools adds four editor-view features to Obsidian:
 
 1. **Image OCR** from context menu over embedded images.
 2. **Crop and resize image** from context menu over embedded images.
-3. **Export selection to PDF** with high-fidelity rendering.
+3. **Explain selection (AI)** from context menu over short text selections.
+4. **Export selection to PDF** with high-fidelity rendering.
 
 ### Features
 
@@ -22,6 +23,10 @@ Magic Tools adds three editor-view features to Obsidian:
 - OCR insertion modes:
   - plain text (default)
   - optional expanded callout
+- AI Definitions (requires Gemini or OpenAI API key):
+  - right-click short text selection → explain term/company/person
+  - concise output modal with copy and close actions
+  - configurable response language (10 common languages)
 - **Gemini Fast Mode** (optional): transcribe + insert + remove image without intermediate modal.
 - Image optimization workflow:
   - crop + resize from one modal
@@ -62,6 +67,7 @@ Magic Tools adds three editor-view features to Obsidian:
 
 - Right-click an embedded image in editor view → **Extract text from image**.
 - Right-click an embedded image in editor view → **Crop and resize image**.
+- Select a short term/phrase and right-click → **Explain selection (AI)**.
 - Select text in editor view → **Export selection to PDF**.
 
 > Maintainer/developer setup and release flow are documented in `CONTRIBUTING.md`.
@@ -70,11 +76,12 @@ Magic Tools adds three editor-view features to Obsidian:
 
 ## Español
 
-Magic Tools agrega tres funciones para la vista de edición de Obsidian:
+Magic Tools agrega cuatro funciones para la vista de edición de Obsidian:
 
 1. **OCR de imágenes** desde el menú contextual sobre imágenes embebidas.
 2. **Recortar y redimensionar imagen** desde el menú contextual sobre imágenes embebidas.
-3. **Exportar selección a PDF** con render de alta fidelidad.
+3. **Explicar selección (IA)** desde menú contextual sobre selecciones cortas de texto.
+4. **Exportar selección a PDF** con render de alta fidelidad.
 
 ### Características
 
@@ -90,6 +97,10 @@ Magic Tools agrega tres funciones para la vista de edición de Obsidian:
 - Modos de inserción OCR:
   - texto plano (default)
   - callout expandido opcional
+- Definiciones IA (requiere API key de Gemini u OpenAI):
+  - clic derecho sobre selección corta → explicación de término/empresa/persona
+  - modal con salida breve y acciones de copiar/cerrar
+  - idioma de respuesta configurable (10 idiomas comunes)
 - **Gemini Fast Mode** (opcional): transcribe + inserta + elimina imagen sin modal intermedio.
 - Flujo de optimización de imagen:
   - recorte + redimensionado en un solo modal
@@ -130,6 +141,7 @@ Magic Tools agrega tres funciones para la vista de edición de Obsidian:
 
 - Clic derecho sobre una imagen embebida en editor view → **Extract text from image**.
 - Clic derecho sobre una imagen embebida en editor view → **Crop and resize image**.
+- Seleccionar término/frase corta y clic derecho → **Explain selection (AI)**.
 - Seleccionar texto en editor view → **Export selection to PDF**.
 
 > La guía para maintainers/desarrolladores y el flujo de release están documentados en `CONTRIBUTING.md`.
