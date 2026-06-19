@@ -15,6 +15,8 @@ import {
   Platform,
 } from "obsidian";
 import {
+  AI_DEFINITION_MAX_CHARS,
+  AI_DEFINITION_MAX_WORDS,
   buildOptimizedImagePathWithExtension,
   MAX_TIMEOUT_SECONDS,
   MIN_TIMEOUT_SECONDS,
@@ -22,6 +24,8 @@ import {
   clampTimeoutSeconds,
   getMarkdownImageMatches,
   getMarkdownImageMatch,
+  getAiDefinitionLanguageName,
+  isAiDefinitionSelectionValid,
   isImageOptimizationSupported,
   resolveMarkdownImagePaths,
   removeWikiDecorators,
@@ -30,6 +34,7 @@ import {
 
 type OcrProvider = "gemini" | "openai" | "local";
 type OcrLanguage = "auto" | "es" | "en";
+type AiDefinitionLanguage = "auto" | "en" | "es" | "pt" | "fr" | "de" | "it" | "nl" | "ru" | "zh" | "ja";
 
 interface MagicToolsSettings {
   googleApiKey: string;
@@ -45,6 +50,8 @@ interface MagicToolsSettings {
   enableImageOptimization: boolean;
   replaceOriginalImage: boolean;
   createBackupBeforeReplace: boolean;
+  enableAiDefinitions: boolean;
+  aiDefinitionLanguage: AiDefinitionLanguage;
 }
 
 interface ImageContext {
@@ -67,6 +74,8 @@ const DEFAULT_SETTINGS: MagicToolsSettings = {
   enableImageOptimization: false,
   replaceOriginalImage: true,
   createBackupBeforeReplace: true,
+  enableAiDefinitions: false,
+  aiDefinitionLanguage: "es",
 };
 
 const I18N = {
@@ -118,10 +127,19 @@ const I18N = {
     settingMinPdfChars: "Mínimo de caracteres para exportar selección",
     settingMinPdfCharsDesc: "Evita exportaciones vacías o accidentales desde menú contextual.",
     sectionOcr: "OCR de imagen",
+    sectionAiDefinitions: "Definiciones con IA",
     sectionImages: "Imágenes",
     sectionPdf: "Exportador PDF",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Exportar selección a PDF",
+    explainSelectionWithAi: "Explicar selección (IA)",
+    aiDefinitionModalTitle: "Explicación breve",
+    aiDefinitionFailed: "No se pudo generar la explicación.",
+    aiDefinitionApiKeyMissing: "Configurá una API key de IA para usar esta función.",
+    aiDefinitionTimeout: "Se agotó el tiempo al pedir la explicación. Probá de nuevo.",
+    aiDefinitionServiceUnavailable: "El proveedor de IA no está disponible temporalmente (503). Probá en unos segundos.",
+    aiDefinitionRateLimited: "Se alcanzó el límite del proveedor de IA (429). Esperá un momento e intentá de nuevo.",
+    aiDefinitionSelectionInvalid: `Seleccioná un término o frase corta (máx. ${AI_DEFINITION_MAX_WORDS} palabras o ${AI_DEFINITION_MAX_CHARS} caracteres).`,
     invalidPdfExportFolder: "Ruta inválida. Debe ser una carpeta dentro del vault.",
     emptyRenderedPdfFallback: "No se pudo renderizar con estilo. Se exportó en modo texto simple.",
     saveDialogCanceled: "Exportación cancelada.",
@@ -177,6 +195,23 @@ const I18N = {
       "Si está activo, crea un archivo .bkp antes de sobrescribir la imagen original.",
     settingImageRiskDisclaimer:
       "⚠️ Si reemplazás la imagen original sin backup, no hay forma automática de recuperarla.",
+    settingEnableAiDefinitions: "Habilitar explicación breve por selección",
+    settingEnableAiDefinitionsDesc:
+      "Agrega una acción contextual para explicar un término o frase corta usando IA.",
+    settingAiDefinitionLanguage: "Idioma de respuesta",
+    settingAiDefinitionLanguageDesc: "Idioma preferido para la explicación breve.",
+    aiDefinitionsRequiresApi: "Configurá una API key de Gemini u OpenAI para habilitar esta sección.",
+    aiLangAuto: "Automático",
+    aiLangEn: "Inglés",
+    aiLangEs: "Español",
+    aiLangPt: "Portugués",
+    aiLangFr: "Francés",
+    aiLangDe: "Alemán",
+    aiLangIt: "Italiano",
+    aiLangNl: "Neerlandés",
+    aiLangRu: "Ruso",
+    aiLangZh: "Chino (simplificado)",
+    aiLangJa: "Japonés",
   },
   en: {
     extractTextFromImage: "Extract text from image",
@@ -226,10 +261,19 @@ const I18N = {
     settingMinPdfChars: "Minimum chars for exporting selection",
     settingMinPdfCharsDesc: "Avoid empty or accidental exports from context menu.",
     sectionOcr: "Image OCR",
+    sectionAiDefinitions: "AI Definitions",
     sectionImages: "Images",
     sectionPdf: "PDF exporter",
     menuGroupTitle: "Magic Tools",
     contextExportSelectionToPdf: "Export selection to PDF",
+    explainSelectionWithAi: "Explain selection (AI)",
+    aiDefinitionModalTitle: "Quick explanation",
+    aiDefinitionFailed: "Could not generate explanation.",
+    aiDefinitionApiKeyMissing: "Configure an AI API key to use this feature.",
+    aiDefinitionTimeout: "Explanation request timed out. Please try again.",
+    aiDefinitionServiceUnavailable: "AI provider is temporarily unavailable (503). Please retry in a few seconds.",
+    aiDefinitionRateLimited: "AI provider rate limit reached (429). Please wait and retry.",
+    aiDefinitionSelectionInvalid: `Select a short term or phrase (max ${AI_DEFINITION_MAX_WORDS} words or ${AI_DEFINITION_MAX_CHARS} chars).`,
     invalidPdfExportFolder: "Invalid path. It must be a folder inside the vault.",
     emptyRenderedPdfFallback: "Styled render failed. Exported using plain text fallback.",
     saveDialogCanceled: "Export canceled.",
@@ -285,6 +329,23 @@ const I18N = {
       "If enabled, creates a .bkp file before overwriting the original image.",
     settingImageRiskDisclaimer:
       "⚠️ If you replace the original image without backup, it cannot be recovered automatically.",
+    settingEnableAiDefinitions: "Enable quick explanation from selection",
+    settingEnableAiDefinitionsDesc:
+      "Adds a contextual action to explain a short term or phrase using AI.",
+    settingAiDefinitionLanguage: "Response language",
+    settingAiDefinitionLanguageDesc: "Preferred language for the quick explanation.",
+    aiDefinitionsRequiresApi: "Configure a Gemini or OpenAI API key to enable this section.",
+    aiLangAuto: "Auto",
+    aiLangEn: "English",
+    aiLangEs: "Spanish",
+    aiLangPt: "Portuguese",
+    aiLangFr: "French",
+    aiLangDe: "German",
+    aiLangIt: "Italian",
+    aiLangNl: "Dutch",
+    aiLangRu: "Russian",
+    aiLangZh: "Chinese (Simplified)",
+    aiLangJa: "Japanese",
   },
 };
 
@@ -343,6 +404,42 @@ class OcrResultModal extends Modal {
     insertButton.addEventListener("click", () => {
       this.onInsert();
       this.close();
+    });
+
+    const closeButton = buttonRow.createEl("button", { text: this.i18n.close });
+    closeButton.addEventListener("click", () => this.close());
+  }
+}
+
+class AiDefinitionModal extends Modal {
+  private readonly i18n = I18N[getLocale()];
+
+  constructor(
+    app: App,
+    private readonly text: string,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText(this.i18n.aiDefinitionModalTitle);
+
+    const body = this.contentEl.createEl("textarea", {
+      text: this.text,
+      cls: "magic-tools-ocr-textarea",
+    });
+    body.style.width = "100%";
+    body.style.minHeight = "140px";
+    body.style.resize = "vertical";
+
+    const buttonRow = this.contentEl.createDiv({ cls: "magic-tools-button-row" });
+    buttonRow.style.display = "flex";
+    buttonRow.style.gap = "8px";
+
+    const copyButton = buttonRow.createEl("button", { text: this.i18n.copyText });
+    copyButton.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(body.value);
+      new Notice(this.i18n.copied);
     });
 
     const closeButton = buttonRow.createEl("button", { text: this.i18n.close });
@@ -867,8 +964,9 @@ export default class MagicToolsPlugin extends Plugin {
         const canExportSelection = hasSelection && !!view.file;
         const canExtractImage = !!imageContext;
         const canOptimizeImage = canExtractImage && this.settings.enableImageOptimization;
+        const canExplainSelection = this.canShowAiDefinitionAction(selectedText);
 
-        if (!canExportSelection && !canExtractImage && !canOptimizeImage) {
+        if (!canExportSelection && !canExtractImage && !canOptimizeImage && !canExplainSelection) {
           return;
         }
 
@@ -891,11 +989,21 @@ export default class MagicToolsPlugin extends Plugin {
           });
         }
 
+        if (canExplainSelection) {
+          menu.addItem((item) => {
+            item.setTitle(this.i18n.explainSelectionWithAi);
+            item.setSection("magic-tools");
+            item.onClick(async () => {
+              await this.handleAiDefinition(selectedText);
+            });
+          });
+        }
+
         if (canExtractImage && imageContext) {
           menu.addItem((item) => {
             item.setTitle(this.i18n.extractTextFromImage);
             item.setSection("magic-tools");
-            item.onClick(async () => this.handleImageOcr(editor, view, imageContext));
+            item.onClick(async () => this.handleImageOcr(editor, imageContext));
           });
         }
 
@@ -942,7 +1050,7 @@ export default class MagicToolsPlugin extends Plugin {
               syntax: this.extractImageSyntaxAtLine(editor, line) ?? `![[${file.path}]]`,
             };
 
-            await this.handleImageOcr(editor, view, imageContext);
+            await this.handleImageOcr(editor, imageContext);
           });
         });
 
@@ -972,11 +1080,7 @@ export default class MagicToolsPlugin extends Plugin {
     });
   }
 
-  private async handleImageOcr(
-    editor: Editor,
-    view: MarkdownFileInfo,
-    imageContext: ImageContext,
-  ): Promise<void> {
+  private async handleImageOcr(editor: Editor, imageContext: ImageContext): Promise<void> {
     try {
       const maxBytes = this.settings.maxImageSizeMb * 1024 * 1024;
       if (imageContext.file.stat.size > maxBytes) {
@@ -1088,6 +1192,162 @@ export default class MagicToolsPlugin extends Plugin {
       return this.runOpenAiOcr(binary, extension);
     }
     return this.runLocalOcr(binary);
+  }
+
+  hasOnlineAiConfigured(): boolean {
+    return !!this.settings.googleApiKey.trim() || !!this.settings.openaiApiKey.trim();
+  }
+
+  private canShowAiDefinitionAction(selection: string): boolean {
+    return this.settings.enableAiDefinitions
+      && this.hasOnlineAiConfigured()
+      && !!selection.trim();
+  }
+
+  private async handleAiDefinition(selection: string): Promise<void> {
+    if (!this.settings.enableAiDefinitions) return;
+    if (!this.hasOnlineAiConfigured()) {
+      new Notice(this.i18n.aiDefinitionApiKeyMissing);
+      return;
+    }
+    if (!isAiDefinitionSelectionValid(selection)) {
+      new Notice(this.i18n.aiDefinitionSelectionInvalid);
+      return;
+    }
+
+    try {
+      const timeoutMs = clampTimeoutSeconds(this.settings.ocrTimeoutSeconds) * 1000;
+      const explanation = await withTimeout(this.runAiDefinition(selection), timeoutMs);
+      const safeText = sanitizeOcrText(explanation);
+      if (!safeText) {
+        throw new Error("EMPTY_AI_DEFINITION_RESULT");
+      }
+
+      const singleParagraph = safeText.replace(/\s*\n+\s*/g, " ").trim();
+      const normalizedTerm = selection.trim();
+      const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const termTokens = normalizedTerm.split(/\s+/).filter(Boolean).map(escapeRegex);
+      const termPattern = termTokens.length ? new RegExp(`\\b${termTokens.join("\\\\s+")}\\b`, "i") : null;
+      const matchedTermInExplanation = termPattern ? singleParagraph.match(termPattern)?.[0] ?? "" : "";
+      const smartCapitalizeWord = (word: string): string => {
+        if (!word) return word;
+        const hasUpperAfterFirst = /[A-Z]/.test(word.slice(1));
+        if (hasUpperAfterFirst) return word;
+        if (word === word.toUpperCase()) return word;
+        if (word === word.toLowerCase()) {
+          return word.charAt(0).toUpperCase() + word.slice(1);
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      };
+      const fallbackCapitalizedTerm = normalizedTerm
+        .split(/(\s+)/)
+        .map((chunk) => (chunk.trim() ? smartCapitalizeWord(chunk) : chunk))
+        .join("");
+      const capitalizedTerm = matchedTermInExplanation || fallbackCapitalizedTerm;
+      const formatted = `**${capitalizedTerm}**: ${singleParagraph}`;
+
+      new AiDefinitionModal(this.app, formatted).open();
+    } catch (error) {
+      console.error("[Magic Tools] Explain selection failed", error);
+      if (error instanceof Error && error.message === "OCR_TIMEOUT") {
+        new Notice(this.i18n.aiDefinitionTimeout, 8000);
+      } else if (error instanceof Error && error.message.includes("HTTP 503")) {
+        new Notice(this.i18n.aiDefinitionServiceUnavailable, 8000);
+      } else if (error instanceof Error && error.message.includes("HTTP 429")) {
+        new Notice(this.i18n.aiDefinitionRateLimited, 8000);
+      } else {
+        new Notice(this.i18n.aiDefinitionFailed);
+      }
+    }
+  }
+
+  private resolveAiDefinitionProvider(): "gemini" | "openai" | null {
+    if (this.settings.defaultProvider === "gemini" && this.settings.googleApiKey.trim()) return "gemini";
+    if (this.settings.defaultProvider === "openai" && this.settings.openaiApiKey.trim()) return "openai";
+    if (this.settings.openaiApiKey.trim()) return "openai";
+    if (this.settings.googleApiKey.trim()) return "gemini";
+    return null;
+  }
+
+  private getAiLanguageHint(): string {
+    return getAiDefinitionLanguageName(this.settings.aiDefinitionLanguage);
+  }
+
+  private async runAiDefinition(selection: string): Promise<string> {
+    const provider = this.resolveAiDefinitionProvider();
+    if (!provider) {
+      throw new Error(this.i18n.aiDefinitionApiKeyMissing);
+    }
+
+    const languageHint = this.getAiLanguageHint();
+    const prompt =
+      `Explain the selected term or phrase in 2-4 short sentences. ` +
+      `If it is a company, person, or organization, explain what it is and why it is known. ` +
+      `Be concise, factual, and avoid markdown/bullets. Language: ${languageHint}. Selection: ${selection}`;
+
+    if (provider === "gemini") {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(this.settings.googleApiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const details = await this.tryExtractProviderError(response);
+        throw new Error(`Gemini HTTP ${response.status}${details ? ` - ${details}` : ""}`);
+      }
+
+      const payload = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      return payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.settings.openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: prompt }],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const details = await this.tryExtractProviderError(response);
+      throw new Error(`OpenAI HTTP ${response.status}${details ? ` - ${details}` : ""}`);
+    }
+
+    const payload = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+    };
+
+    if (payload.output_text?.trim()) {
+      return payload.output_text;
+    }
+
+    return payload.output
+      ?.flatMap((item) => item.content ?? [])
+      .map((part) => (part.type === "output_text" || part.type === "text" ? part.text ?? "" : ""))
+      .join("\n")
+      .trim() ?? "";
   }
 
   private async runGeminiOcr(binary: ArrayBuffer, extension: string): Promise<string> {
@@ -1711,6 +1971,7 @@ class MagicToolsSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.googleApiKey = value.trim();
             await this.plugin.saveSettings();
+            this.display();
           }),
       );
 
@@ -1724,6 +1985,7 @@ class MagicToolsSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.openaiApiKey = value.trim();
             await this.plugin.saveSettings();
+            this.display();
           }),
       );
 
@@ -1736,9 +1998,12 @@ class MagicToolsSettingTab extends PluginSettingTab {
           .addOption("gemini", this.i18n.providerGemini)
           .addOption("openai", this.i18n.providerOpenAI)
           .setValue(this.plugin.settings.defaultProvider)
-          .onChange(async (value: OcrProvider) => {
-            this.plugin.settings.defaultProvider = value;
-            await this.plugin.saveSettings();
+          .onChange(async (value: string) => {
+            const allowed: OcrProvider[] = ["local", "gemini", "openai"];
+            if (allowed.includes(value as OcrProvider)) {
+              this.plugin.settings.defaultProvider = value as OcrProvider;
+              await this.plugin.saveSettings();
+            }
           });
       });
 
@@ -1771,9 +2036,12 @@ class MagicToolsSettingTab extends PluginSettingTab {
           .addOption("es", this.i18n.langEs)
           .addOption("en", this.i18n.langEn)
           .setValue(this.plugin.settings.ocrLanguage)
-          .onChange(async (value: OcrLanguage) => {
-            this.plugin.settings.ocrLanguage = value;
-            await this.plugin.saveSettings();
+          .onChange(async (value: string) => {
+            const allowed: OcrLanguage[] = ["auto", "es", "en"];
+            if (allowed.includes(value as OcrLanguage)) {
+              this.plugin.settings.ocrLanguage = value as OcrLanguage;
+              await this.plugin.saveSettings();
+            }
           });
       });
 
@@ -1805,6 +2073,56 @@ class MagicToolsSettingTab extends PluginSettingTab {
           }
         }),
       );
+
+    containerEl.createEl("h3", { text: this.i18n.sectionAiDefinitions });
+
+    const hasAiApiConfigured = this.plugin.hasOnlineAiConfigured();
+
+    new Setting(containerEl)
+      .setName(this.i18n.settingEnableAiDefinitions)
+      .setDesc(this.i18n.settingEnableAiDefinitionsDesc)
+      .addToggle((toggle) => {
+        toggle
+          .setValue(hasAiApiConfigured ? this.plugin.settings.enableAiDefinitions : false)
+          .setDisabled(!hasAiApiConfigured)
+          .onChange(async (value) => {
+            this.plugin.settings.enableAiDefinitions = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName(this.i18n.settingAiDefinitionLanguage)
+      .setDesc(this.i18n.settingAiDefinitionLanguageDesc)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("auto", this.i18n.aiLangAuto)
+          .addOption("en", this.i18n.aiLangEn)
+          .addOption("es", this.i18n.aiLangEs)
+          .addOption("pt", this.i18n.aiLangPt)
+          .addOption("fr", this.i18n.aiLangFr)
+          .addOption("de", this.i18n.aiLangDe)
+          .addOption("it", this.i18n.aiLangIt)
+          .addOption("nl", this.i18n.aiLangNl)
+          .addOption("ru", this.i18n.aiLangRu)
+          .addOption("zh", this.i18n.aiLangZh)
+          .addOption("ja", this.i18n.aiLangJa)
+          .setValue(this.plugin.settings.aiDefinitionLanguage)
+          .setDisabled(!hasAiApiConfigured)
+          .onChange(async (value: string) => {
+            const allowed: AiDefinitionLanguage[] = ["auto", "en", "es", "pt", "fr", "de", "it", "nl", "ru", "zh", "ja"];
+            if (allowed.includes(value as AiDefinitionLanguage)) {
+              this.plugin.settings.aiDefinitionLanguage = value as AiDefinitionLanguage;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
+
+    if (!hasAiApiConfigured) {
+      const warning = containerEl.createEl("p", { text: this.i18n.aiDefinitionsRequiresApi });
+      warning.style.margin = "6px 0 12px";
+      warning.style.color = "var(--text-warning, #c86d00)";
+    }
 
     containerEl.createEl("h3", { text: this.i18n.sectionImages });
 

@@ -2,6 +2,8 @@ export const MAX_OUTPUT_LENGTH = 20000;
 export const MAX_TIMEOUT_SECONDS = 30;
 export const MIN_TIMEOUT_SECONDS = 3;
 export const IMAGE_OPTIMIZATION_EXTENSIONS = ["png", "jpg", "jpeg", "webp"] as const;
+export const AI_DEFINITION_MAX_WORDS = 8;
+export const AI_DEFINITION_MAX_CHARS = 60;
 
 export function sanitizeOcrText(input: string): string {
   const withoutControl = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
@@ -112,6 +114,37 @@ export function buildSelectionPdfOutputPath(
 export function isImageOptimizationSupported(extension: string): boolean {
   const ext = extension.toLowerCase();
   return IMAGE_OPTIMIZATION_EXTENSIONS.includes(ext as (typeof IMAGE_OPTIMIZATION_EXTENSIONS)[number]);
+}
+
+export function isAiDefinitionSelectionValid(
+  selection: string,
+  maxWords: number = AI_DEFINITION_MAX_WORDS,
+  maxChars: number = AI_DEFINITION_MAX_CHARS,
+): boolean {
+  const normalized = selection.trim();
+  if (!normalized) return false;
+  if (normalized.length > maxChars) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= maxWords;
+}
+
+export function getAiDefinitionLanguageName(code: string): string {
+  const labels: Record<string, string> = {
+    auto: "auto",
+    en: "English",
+    es: "Spanish",
+    pt: "Portuguese",
+    fr: "French",
+    de: "German",
+    it: "Italian",
+    nl: "Dutch",
+    ru: "Russian",
+    zh: "Chinese (Simplified)",
+    ja: "Japanese",
+  };
+
+  return labels[code] ?? "auto";
 }
 
 export function buildOptimizedImagePath(filePath: string): string {
