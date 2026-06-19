@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AI_DEFINITION_MAX_CHARS,
+  AI_DEFINITION_MAX_WORDS,
   IMAGE_OPTIMIZATION_EXTENSIONS,
   MAX_OUTPUT_LENGTH,
   MAX_TIMEOUT_SECONDS,
@@ -10,6 +12,8 @@ import {
   clampTimeoutSeconds,
   getMarkdownImageMatches,
   getMarkdownImageMatch,
+  getAiDefinitionLanguageName,
+  isAiDefinitionSelectionValid,
   isImageOptimizationSupported,
   removeWikiDecorators,
   resolveMarkdownImagePaths,
@@ -171,5 +175,40 @@ describe("buildOptimizedImagePath", () => {
 describe("buildOptimizedImagePathWithExtension", () => {
   it("uses requested extension", () => {
     expect(buildOptimizedImagePathWithExtension("images/photo.png", "jpg")).toBe("images/photo-optimized.jpg");
+  });
+});
+
+describe("isAiDefinitionSelectionValid", () => {
+  it("accepts short single-term selections", () => {
+    expect(isAiDefinitionSelectionValid("OpenAI")).toBe(true);
+  });
+
+  it("accepts short multi-word selections", () => {
+    expect(isAiDefinitionSelectionValid("clean architecture pattern")).toBe(true);
+  });
+
+  it("rejects empty selections", () => {
+    expect(isAiDefinitionSelectionValid("   ")).toBe(false);
+  });
+
+  it("rejects selections over max words", () => {
+    const longSelection = Array.from({ length: AI_DEFINITION_MAX_WORDS + 1 }, () => "word").join(" ");
+    expect(isAiDefinitionSelectionValid(longSelection)).toBe(false);
+  });
+
+  it("rejects selections over max chars", () => {
+    const longSelection = "x".repeat(AI_DEFINITION_MAX_CHARS + 1);
+    expect(isAiDefinitionSelectionValid(longSelection)).toBe(false);
+  });
+});
+
+describe("getAiDefinitionLanguageName", () => {
+  it("maps known language codes", () => {
+    expect(getAiDefinitionLanguageName("es")).toBe("Spanish");
+    expect(getAiDefinitionLanguageName("zh")).toBe("Chinese (Simplified)");
+  });
+
+  it("returns auto for unknown codes", () => {
+    expect(getAiDefinitionLanguageName("xx")).toBe("auto");
   });
 });
