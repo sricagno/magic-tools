@@ -19,8 +19,8 @@ importers:
         specifier: ^0.28.1
         version: 0.28.1
       obsidian:
-        specifier: ^1.13.0
-        version: 1.13.0(@codemirror/state@6.5.0)(@codemirror/view@6.38.6)
+        specifier: ^1.13.1
+        version: 1.13.1(@codemirror/state@6.5.0)(@codemirror/view@6.38.6)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -520,8 +520,8 @@ packages:
       encoding:
         optional: true
 
-  obsidian@1.13.0:
-    resolution: {integrity: sha512-PHw5+SAPlJ0S3leFvJ0wgFg63Z3DavxL6+d1ll+8toXR2ZlYKc1rMWqdUv9LgUbTwPQUyY6yfhOMMivampRRiQ==}
+  obsidian@1.13.1:
+    resolution: {integrity: sha512-qtTEA2pmhJzhuhJqzbBFRYhpIOqvW+krDYjtFynv66KbxBbumHBlsJfWw3I4jtnK/6fZwbQhCrmmDdRwXmX56w==}
     peerDependencies:
       '@codemirror/state': 6.5.0
       '@codemirror/view': 6.38.6
@@ -1072,7 +1072,7 @@ snapshots:
     dependencies:
       whatwg-url: 5.0.0
 
-  obsidian@1.13.0(@codemirror/state@6.5.0)(@codemirror/view@6.38.6):
+  obsidian@1.13.1(@codemirror/state@6.5.0)(@codemirror/view@6.38.6):
     dependencies:
       '@codemirror/state': 6.5.0
       '@codemirror/view': 6.38.6
