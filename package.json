@@ -16,7 +16,7 @@
     "@types/node": "^25.9.3",
     "esbuild": "^0.28.1",
     "obsidian": "^1.13.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
   },
