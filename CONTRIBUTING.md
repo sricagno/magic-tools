@@ -16,6 +16,16 @@ pnpm test
 pnpm build
 ```
 
+### Integrity check after risky dependency upgrades
+
+Run this after upgrading major or risky dependencies (e.g. TypeScript, esbuild, vitest, tesseract.js):
+
+```bash
+pnpm run check:integrity
+```
+
+This runs typecheck → tests → build in sequence. All three must pass before committing the upgrade.
+
 ### Versioning
 
 Keep `package.json` and `manifest.json` synchronized.
@@ -67,6 +77,16 @@ pnpm install
 pnpm test
 pnpm build
 ```
+
+### Verificación de integridad tras upgrades de dependencias riesgosas
+
+Ejecutar luego de actualizar dependencias mayores o riesgosas (p.ej. TypeScript, esbuild, vitest, tesseract.js):
+
+```bash
+pnpm run check:integrity
+```
+
+Corre typecheck → tests → build en secuencia. Los tres deben pasar antes de commitear el upgrade.
 
 ### Versionado
 

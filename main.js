@@ -6,7 +6,11 @@ var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -2645,7 +2649,7 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
     const tesseract = await Promise.resolve().then(() => __toESM(require_src()));
     const worker = await tesseract.createWorker(lang);
     try {
-      const result = await worker.recognize(new Uint8Array(binary));
+      const result = await worker.recognize(Buffer.from(binary));
       return result.data.text ?? "";
     } finally {
       await worker.terminate();
@@ -2814,7 +2818,8 @@ var MagicToolsPlugin = class extends import_obsidian.Plugin {
         console.warn("[Magic Tools] PDF output looks too small/empty", nodeBuffer?.byteLength ?? 0);
       }
       win.destroy();
-      return nodeBuffer.buffer.slice(nodeBuffer.byteOffset, nodeBuffer.byteOffset + nodeBuffer.byteLength);
+      const buf = nodeBuffer.buffer instanceof ArrayBuffer ? nodeBuffer.buffer : new Uint8Array(nodeBuffer.buffer).buffer;
+      return buf.slice(nodeBuffer.byteOffset, nodeBuffer.byteOffset + nodeBuffer.byteLength);
     } catch (error) {
       console.error("[Magic Tools] Electron PDF rendering unavailable", error);
       return null;

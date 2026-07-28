@@ -1471,7 +1471,7 @@ export default class MagicToolsPlugin extends Plugin {
     const tesseract = await import("tesseract.js");
     const worker = await tesseract.createWorker(lang);
     try {
-      const result = await worker.recognize(new Uint8Array(binary));
+      const result = await worker.recognize(Buffer.from(binary));
       return result.data.text ?? "";
     } finally {
       await worker.terminate();
@@ -1669,7 +1669,10 @@ export default class MagicToolsPlugin extends Plugin {
       }
 
       win.destroy();
-      return nodeBuffer.buffer.slice(nodeBuffer.byteOffset, nodeBuffer.byteOffset + nodeBuffer.byteLength);
+      const buf = nodeBuffer.buffer instanceof ArrayBuffer
+        ? nodeBuffer.buffer
+        : new Uint8Array(nodeBuffer.buffer).buffer;
+      return buf.slice(nodeBuffer.byteOffset, nodeBuffer.byteOffset + nodeBuffer.byteLength) as ArrayBuffer;
     } catch (error) {
       console.error("[Magic Tools] Electron PDF rendering unavailable", error);
       return null;
