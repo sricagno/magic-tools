@@ -4,6 +4,9 @@
   "private": true,
   "description": "Obsidian plugin: OCR + export selection to PDF",
   "main": "main.js",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
   "scripts": {
     "build": "esbuild main.ts --bundle --format=cjs --target=es2020 --platform=browser --outfile=main.js --external:obsidian",
     "test": "vitest run",
@@ -14,12 +17,12 @@
     "check:integrity": "pnpm exec tsc --noEmit && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "esbuild": "^0.28.1",
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
     "obsidian": "^1.13.1",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "tesseract.js": "^7.0.0"

@@ -13,5 +13,5 @@
     "lib": ["ES2020", "DOM"],
     "types": ["node"]
   },
-  "include": ["main.ts", "magic-tools-utils.ts", "magic-tools-utils.test.ts"]
+  "include": ["main.ts", "magic-tools-utils.ts", "*.test.ts"]
 }

@@ -24,17 +24,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run tests
-        run: pnpm test
-
-      - name: Build plugin
-        run: pnpm build
+      - name: Run integrity checks
+        run: pnpm run check:integrity
 
       - name: Package release assets
         run: |
